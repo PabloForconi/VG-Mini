@@ -830,21 +830,11 @@ export class Iman implements MiniGame {
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
     } else {
-      const n = SHIELD_SLICES.pizza;
+      // Solid flat color (vs the plain shield's translucent bubble) that keeps cycling.
       ctx.fillStyle = this.pizzaColor();
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
-      // Thin cuts mark it as the slice shield, even when its color passes through white.
-      ctx.strokeStyle = 'rgba(12,10,29,0.35)';
-      ctx.lineWidth = 1.2;
-      for (let i = 0; i < n; i++) {
-        const a = (i / n) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-        ctx.stroke();
-      }
     }
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2.5;
