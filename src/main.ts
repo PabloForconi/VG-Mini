@@ -24,6 +24,8 @@ fit();
 window.addEventListener('resize', fit);
 
 const game = (games[location.hash.slice(1)] ?? games.iman)(ctx);
+// Handy for poking at state from the console; stripped from production builds.
+if (import.meta.env.DEV) Object.assign(window, { game });
 startLoop(
   (dt) => game.update(dt),
   (alpha) => game.render(alpha),

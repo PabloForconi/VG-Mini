@@ -5,8 +5,10 @@ import { HEIGHT, WIDTH, type MiniGame } from './MiniGame';
 
 /**
  * IMÁN — hold to pull everything toward the core.
- * Light crystals answer the pull fast, heavy mines slowly: short taps farm
- * crystals, long holds drag in a mine. That mass gap is the whole game.
+ * Light crystals answer the pull fast, heavy mines slowly. Caught crystals
+ * are stored in the core, which grows (bigger target for mines, stronger
+ * pull). Tap the core to cash out: the bigger the load, the bigger the
+ * multiplier. A mine hit loses everything not cashed.
  */
 
 const CX = WIDTH / 2;
@@ -15,9 +17,14 @@ const CY = HEIGHT / 2;
 /** Tuning knobs: everything that changes how the game feels lives here. */
 const T = {
   fieldRadius: 230,
+  fieldGrowth: 70, // extra field radius at max core size
   pullForce: 1500,
+  pullGrowth: 0.6, // extra pull (fraction) at max core size
   pullDecay: 2.4, // how fast pulled velocity bleeds off after release (1/s)
   coreRadius: 16,
+  coreMax: 56,
+  coreGrowth: 1.1, // px of radius per stored load unit
+  coreTapMargin: 14, // forgiving tap target around the core
   driftMin: 40,
   driftMax: 70,
   driftRamp: 0.9, // extra drift speed per second played
@@ -31,29 +38,36 @@ const T = {
   mineMax: 0.5,
   mineRamp: 0.006,
   gemChance: 0.06,
-  comboWindow: 1.3,
-  comboPerLevel: 4, // catches per multiplier step
-  multMax: 8,
   nearMissGap: 22,
   nearMissPoints: 5,
   pointsPerCoin: 5,
 };
 
-/** Pentatonic steps so rising combo notes always sound musical. */
+type Kind = 'shard' | 'gem' | 'mine';
+
+/** `load` is how much a catch grows the core; `value` is points stored. */
+const KINDS: Record<Kind, { r: number; mass: number; value: number; load: number; color: string }> = {
+  shard: { r: 7, mass: 1, value: 1, load: 1, color: '#29e7ff' },
+  gem: { r: 11, mass: 1.8, value: 10, load: 3, color: '#ff4fd8' },
+  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#ff3b3b' },
+};
+
+/** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
+const TIERS = [
+  { load: 0, mult: 1, color: '#ffffff' },
+  { load: 5, mult: 2, color: '#9ff6ff' },
+  { load: 10, mult: 3, color: '#29e7ff' },
+  { load: 20, mult: 5, color: '#ffd23f' },
+  { load: 35, mult: 8, color: '#ff9f1c' },
+];
+
+/** Pentatonic steps so rising notes always sound musical. */
 const SCALE = [0, 2, 4, 7, 9];
 const note = (step: number) =>
   523.25 * 2 ** ((SCALE[step % SCALE.length] + 12 * Math.floor(step / SCALE.length)) / 12);
 
 /** Mute toggle hit box, top-left corner (only active outside of play). */
 const MUTE_BTN = { x: 8, y: 6, w: 40, h: 34 };
-
-type Kind = 'shard' | 'gem' | 'mine';
-
-const KINDS: Record<Kind, { r: number; mass: number; value: number; color: string }> = {
-  shard: { r: 7, mass: 1, value: 1, color: '#29e7ff' },
-  gem: { r: 11, mass: 1.8, value: 10, color: '#ff4fd8' },
-  mine: { r: 11, mass: 3.4, value: 0, color: '#ff3b3b' },
-};
 
 interface Body {
   kind: Kind;
@@ -85,6 +99,7 @@ interface Popup {
   y: number;
   text: string;
   color: string;
+  size: number;
   life: number;
 }
 
@@ -101,13 +116,18 @@ export class Iman implements MiniGame {
   private time = 0; // seconds into the current run
   private spawnTimer = 0;
   private score = 0;
-  private combo = 0;
-  private comboTimer = 0;
+  private shownScore = 0; // counts up toward score
+  private bank = 0; // points stored in the core, not yet cashed
+  private load = 0; // what the core is carrying; drives size and tier
+  private coreR = T.coreRadius; // drawn/collision radius, eases toward target
+  private lost = 0; // what the last death threw away
   private best = loadNumber('iman.best');
   private coins = loadNumber('coins');
+  private cashedOnce = loadNumber('iman.cashedOnce') === 1;
   private runCoins = 0;
   private newBest = false;
   private holding = false;
+  private holdBlocked = false; // a press that cashed out shouldn't also pull
   private overAt = 0;
   private shake = 0;
   private corePop = 0;
@@ -116,41 +136,76 @@ export class Iman implements MiniGame {
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
-  private get mult() {
-    return Math.min(T.multMax, 1 + Math.floor(this.combo / T.comboPerLevel));
+  private get tierIndex() {
+    let i = 0;
+    while (i + 1 < TIERS.length && this.load >= TIERS[i + 1].load) i++;
+    return i;
+  }
+
+  /** 0 at base size, 1 at max size. */
+  private get growth() {
+    return (this.coreR - T.coreRadius) / (T.coreMax - T.coreRadius);
+  }
+
+  private get fieldRadius() {
+    return T.fieldRadius + T.fieldGrowth * this.growth;
+  }
+
+  private targetCoreR() {
+    return Math.min(T.coreMax, T.coreRadius + this.load * T.coreGrowth);
+  }
+
+  /** Last pointer press, in game coordinates. */
+  private pointerInGame() {
+    const r = this.ctx.canvas.getBoundingClientRect();
+    return {
+      x: ((pointer.x - r.left) / r.width) * WIDTH,
+      y: ((pointer.y - r.top) / r.height) * HEIGHT,
+    };
   }
 
   private hitMute() {
-    const r = this.ctx.canvas.getBoundingClientRect();
-    const x = ((pointer.x - r.left) / r.width) * WIDTH;
-    const y = ((pointer.y - r.top) / r.height) * HEIGHT;
+    const { x, y } = this.pointerInGame();
     const b = MUTE_BTN;
     return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
   }
 
+  private hitCore() {
+    const { x, y } = this.pointerInGame();
+    return Math.hypot(x - CX, y - CY) <= this.coreR + T.coreTapMargin;
+  }
+
   update(dt: number) {
     this.clock += dt;
-    this.holding = isHolding();
-    const pressed = takePress();
+    const press = takePress();
+    if (!isHolding()) this.holdBlocked = false;
 
     this.updateFx(dt);
+    this.coreR += (this.targetCoreR() - this.coreR) * Math.min(1, dt * 12);
+    this.shownScore += (this.score - this.shownScore) * Math.min(1, dt * 8);
+
+    if (this.state === 'playing' && press === 'pointer' && this.load > 0 && this.hitCore()) {
+      this.cashOut();
+      this.holdBlocked = true;
+    }
+    this.holding = isHolding() && !this.holdBlocked;
 
     // Field hum rises in pitch the longer you hold: you hear the greed.
     this.holdTime = this.holding && this.state === 'playing' ? this.holdTime + dt : 0;
     const h = Math.min(this.holdTime, 2.5);
     this.hum.set(this.holdTime > 0 ? 0.05 + h * 0.025 : 0, 65 + h * 45);
 
-    if (this.state !== 'playing' && pressed && this.hitMute()) {
+    if (this.state !== 'playing' && press === 'pointer' && this.hitMute()) {
       setMuted(!isMuted());
       return;
     }
     if (this.state === 'ready') {
-      if (pressed) this.start();
+      if (press) this.start();
       return;
     }
     if (this.state === 'over') {
       // Short lockout so a panicked tap doesn't skip the results.
-      if (pressed && this.clock - this.overAt > 0.6) this.start();
+      if (press && this.clock - this.overAt > 0.6) this.start();
       return;
     }
 
@@ -161,19 +216,18 @@ export class Iman implements MiniGame {
       this.spawnTimer = Math.max(T.spawnMin, T.spawnStart - this.time * T.spawnRamp);
     }
 
-    this.comboTimer -= dt;
-    if (this.comboTimer <= 0) this.combo = 0;
-
     const decay = Math.exp(-T.pullDecay * dt);
+    const field = this.fieldRadius;
+    const force = T.pullForce * (1 + T.pullGrowth * this.growth);
     for (const b of this.bodies) {
       const k = KINDS[b.kind];
       let ox = CX - b.x;
       let oy = CY - b.y;
       let d = Math.hypot(ox, oy);
 
-      if (this.holding && d < T.fieldRadius) {
+      if (this.holding && d < field) {
         // Stronger near the core, so a committed pull finishes the job.
-        const a = (T.pullForce * (1.2 - d / T.fieldRadius)) / k.mass;
+        const a = (force * (1.2 - d / field)) / k.mass;
         b.vx += (ox / d) * a * dt;
         b.vy += (oy / d) * a * dt;
       }
@@ -188,7 +242,7 @@ export class Iman implements MiniGame {
       oy = CY - b.y;
       d = Math.hypot(ox, oy);
 
-      if (d < T.coreRadius + k.r) {
+      if (d < this.coreR + k.r) {
         b.dead = true;
         if (b.kind === 'mine') return this.gameOver(b);
         this.collect(b);
@@ -196,10 +250,10 @@ export class Iman implements MiniGame {
       }
 
       if (b.kind === 'mine') {
-        const inRing = d < T.coreRadius + k.r + T.nearMissGap;
+        const inRing = d < this.coreR + k.r + T.nearMissGap;
         if (b.danger && !inRing) {
-          this.score += T.nearMissPoints * this.mult;
-          this.popup(b.x, b.y, `¡CERCA! +${T.nearMissPoints * this.mult}`, '#ffd23f');
+          this.score += T.nearMissPoints;
+          this.popup(b.x, b.y, `¡CERCA! +${T.nearMissPoints}`, '#ffd23f');
           tone({ freq: 900, to: 300, dur: 0.25, type: 'triangle', gain: 0.15 });
           tone({ freq: 1320, dur: 0.15, gain: 0.1, delay: 0.08 });
           vibrate(15);
@@ -219,8 +273,10 @@ export class Iman implements MiniGame {
     this.time = 0;
     this.spawnTimer = 0.3;
     this.score = 0;
-    this.combo = 0;
-    this.comboTimer = 0;
+    this.shownScore = 0;
+    this.bank = 0;
+    this.load = 0;
+    this.lost = 0;
     this.newBest = false;
     tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
   }
@@ -238,7 +294,8 @@ export class Iman implements MiniGame {
     // Aim past the core so nothing reaches it without the player's input.
     const toCore = Math.atan2(CY - y, CX - x);
     const dist = Math.hypot(CX - x, CY - y);
-    const miss = rand(T.missMin, T.missMax);
+    const missMin = Math.max(T.missMin, this.coreR + 45);
+    const miss = rand(missMin, Math.max(missMin, T.missMax));
     const ang = toCore + Math.asin(Math.min(1, miss / dist)) * (Math.random() < 0.5 ? -1 : 1);
     const speed = Math.min(T.driftCap, rand(T.driftMin, T.driftMax) + this.time * T.driftRamp);
 
@@ -259,29 +316,54 @@ export class Iman implements MiniGame {
 
   private collect(b: Body) {
     const k = KINDS[b.kind];
-    this.combo++;
-    this.comboTimer = T.comboWindow;
-    const pts = k.value * this.mult;
-    this.score += pts;
+    const tierBefore = this.tierIndex;
+    this.bank += k.value;
+    this.load += k.load;
     this.corePop = 1;
     this.burst(CX, CY, k.color, b.kind === 'gem' ? 24 : 8, 140);
-    this.popup(CX + rand(-30, 30), CY - 34, `+${pts}`, k.color);
 
-    // Each catch in a combo climbs the scale; the climb itself is the reward.
-    const step = Math.min(this.combo - 1, 14);
+    // Notes climb with the load: the higher the pitch, the more you risk.
+    const step = Math.min(this.load, 24);
     if (b.kind === 'gem') {
-      tone({ freq: note(step + 5), dur: 0.35, type: 'triangle', gain: 0.18 });
-      tone({ freq: note(step + 7), dur: 0.35, type: 'triangle', gain: 0.12, delay: 0.06 });
+      tone({ freq: note(step), dur: 0.35, type: 'triangle', gain: 0.18 });
+      tone({ freq: note(step + 2), dur: 0.35, type: 'triangle', gain: 0.12, delay: 0.06 });
       vibrate(10);
     } else {
       tone({ freq: note(step), dur: 0.14, type: 'triangle', gain: 0.16 });
     }
 
-    if (this.combo % T.comboPerLevel === 0 && this.mult > 1) {
-      this.popup(CX, CY + 44, `x${this.mult}!`, '#ffd23f');
+    if (this.tierIndex > tierBefore) {
+      const tier = TIERS[this.tierIndex];
+      this.popup(CX, CY - this.targetCoreR() - 16, `x${tier.mult}`, tier.color, 22);
       [0, 2, 4].forEach((s, i) =>
-        tone({ freq: note(step + s + 5), dur: 0.12, type: 'square', gain: 0.06, delay: 0.05 + i * 0.05 }),
+        tone({ freq: note(step + s + 2), dur: 0.12, type: 'square', gain: 0.06, delay: 0.05 + i * 0.05 }),
       );
+    }
+  }
+
+  private cashOut() {
+    const ti = this.tierIndex;
+    const tier = TIERS[ti];
+    const pts = this.bank * tier.mult;
+    this.score += pts;
+    this.burst(CX, CY, tier.color, 12 + this.load * 2, 160 + this.load * 6);
+    this.burst(CX, CY, '#ffffff', 10, 120);
+    this.popup(CX, CY - this.coreR - 24, `+${pts}`, tier.color, 20 + ti * 4);
+    this.corePop = 1;
+    this.shake = 0.04 * ti;
+
+    // Bigger cash-outs get a longer, higher arpeggio.
+    for (let i = 0; i <= ti + 1; i++) {
+      tone({ freq: note(i * 2 + ti * 2), dur: 0.2, type: 'triangle', gain: 0.14, delay: i * 0.05 });
+    }
+    tone({ freq: 110, to: 55, dur: 0.25, type: 'sine', gain: 0.3 });
+    vibrate(20 + ti * 15);
+
+    this.bank = 0;
+    this.load = 0;
+    if (!this.cashedOnce) {
+      this.cashedOnce = true;
+      saveNumber('iman.cashedOnce', 1);
     }
   }
 
@@ -289,9 +371,12 @@ export class Iman implements MiniGame {
     this.state = 'over';
     this.overAt = this.clock;
     this.shake = 0.5;
+    this.lost = this.bank * TIERS[this.tierIndex].mult;
     this.burst(mine.x, mine.y, '#ff3b3b', 40, 260);
-    this.burst(CX, CY, '#ffffff', 20, 180);
+    this.burst(CX, CY, '#ffffff', 20 + this.load * 2, 180);
     this.bodies = this.bodies.filter((b) => !b.dead);
+    this.bank = 0;
+    this.load = 0;
     noise(0.6, 0.5, 2000);
     tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
     vibrate([60, 40, 120]);
@@ -316,8 +401,8 @@ export class Iman implements MiniGame {
     }
   }
 
-  private popup(x: number, y: number, text: string, color: string) {
-    this.popups.push({ x, y, text, color, life: 0.8 });
+  private popup(x: number, y: number, text: string, color: string, size = 16) {
+    this.popups.push({ x, y, text, color, size, life: 0.9 });
   }
 
   private updateFx(dt: number) {
@@ -356,8 +441,9 @@ export class Iman implements MiniGame {
 
     this.drawField(active);
 
+    const field = this.fieldRadius;
     for (const b of this.bodies) {
-      if (active && Math.hypot(CX - b.x, CY - b.y) < T.fieldRadius) {
+      if (active && Math.hypot(CX - b.x, CY - b.y) < field) {
         ctx.strokeStyle = b.kind === 'mine' ? 'rgba(255,59,59,0.25)' : 'rgba(41,231,255,0.18)';
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -378,10 +464,10 @@ export class Iman implements MiniGame {
     if (this.state !== 'over') this.drawCore(active);
 
     ctx.textAlign = 'center';
-    ctx.font = 'bold 16px system-ui, sans-serif';
     for (const p of this.popups) {
       ctx.globalAlpha = Math.min(1, p.life * 2);
       ctx.fillStyle = p.color;
+      ctx.font = `900 ${p.size}px system-ui, sans-serif`;
       ctx.fillText(p.text, p.x, p.y);
     }
     ctx.globalAlpha = 1;
@@ -392,10 +478,11 @@ export class Iman implements MiniGame {
 
   private drawField(active: boolean) {
     const { ctx } = this;
+    const field = this.fieldRadius;
     ctx.lineWidth = 2;
     ctx.strokeStyle = `rgba(41,231,255,${active ? 0.35 : 0.08})`;
     ctx.beginPath();
-    ctx.arc(CX, CY, T.fieldRadius, 0, Math.PI * 2);
+    ctx.arc(CX, CY, field, 0, Math.PI * 2);
     ctx.stroke();
     if (!active) return;
     // Rings collapsing inward sell the pull.
@@ -403,7 +490,7 @@ export class Iman implements MiniGame {
       const t = (this.clock * 1.6 + i / 3) % 1;
       ctx.strokeStyle = `rgba(41,231,255,${0.25 * t})`;
       ctx.beginPath();
-      ctx.arc(CX, CY, T.fieldRadius * (1 - t) + T.coreRadius, 0, Math.PI * 2);
+      ctx.arc(CX, CY, (field - this.coreR) * (1 - t) + this.coreR, 0, Math.PI * 2);
       ctx.stroke();
     }
   }
@@ -447,15 +534,52 @@ export class Iman implements MiniGame {
 
   private drawCore(active: boolean) {
     const { ctx } = this;
-    const r = T.coreRadius * (1 + this.corePop * 0.35 + (active ? 0.1 : 0));
+    const ti = this.tierIndex;
+    const tier = TIERS[ti];
+    const r = this.coreR * (1 + this.corePop * 0.2 + (active ? 0.06 : 0));
+
     ctx.save();
-    ctx.shadowColor = active ? '#29e7ff' : '#ffffff';
-    ctx.shadowBlur = active ? 30 : 14;
-    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = active ? '#29e7ff' : tier.color;
+    ctx.shadowBlur = 14 + this.growth * 30;
+    ctx.fillStyle = tier.color;
     ctx.beginPath();
     ctx.arc(CX, CY, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+
+    // Progress ring toward the next tier; full and pulsing at the top tier.
+    const next = TIERS[ti + 1];
+    const progress = next ? (this.load - tier.load) / (next.load - tier.load) : 1;
+    if (this.load > 0) {
+      ctx.strokeStyle = next ? next.color : tier.color;
+      ctx.globalAlpha = next ? 0.9 : 0.6 + Math.sin(this.clock * 10) * 0.4;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(CX, CY, r + 6, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    if (this.bank > 0) {
+      ctx.fillStyle = '#05040b';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `900 ${Math.max(11, Math.round(r * 0.75))}px system-ui, sans-serif`;
+      ctx.fillText(String(this.bank), CX, CY + 1);
+      ctx.textBaseline = 'alphabetic';
+      if (tier.mult > 1) {
+        ctx.fillStyle = tier.color;
+        ctx.font = '900 16px system-ui, sans-serif';
+        ctx.fillText(`x${tier.mult}`, CX, CY + r + 26);
+      }
+    }
+
+    if (!this.cashedOnce && this.load >= TIERS[1].load && this.state === 'playing') {
+      ctx.fillStyle = `rgba(255,210,63,${0.6 + Math.sin(this.clock * 6) * 0.4})`;
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillText('TOCÁ EL NÚCLEO PARA COBRAR', CX, CY + r + 50);
+    }
   }
 
   /** Speaker drawn with paths (emoji glyphs vary too much across phones). */
@@ -504,11 +628,14 @@ export class Iman implements MiniGame {
     if (this.state === 'ready') {
       ctx.fillStyle = '#ffffff';
       ctx.font = '900 56px system-ui, sans-serif';
-      ctx.fillText('IMÁN', CX, 140);
+      ctx.fillText('IMÁN', CX, 130);
       ctx.font = '15px system-ui, sans-serif';
       ctx.fillStyle = '#c9c4ff';
-      ctx.fillText('Mantené presionado para atraer.', CX, 180);
-      ctx.fillText('Los cristales llegan rápido. Las minas, lento.', CX, 202);
+      ctx.fillText('Mantené presionado para atraer.', CX, 170);
+      ctx.fillText('Tocá el núcleo para cobrar lo que juntaste.', CX, 192);
+      ctx.fillText('Más carga = más multiplicador... y más grande.', CX, 214);
+      ctx.fillStyle = '#ff8a8a';
+      ctx.fillText('Si te toca una mina, perdés lo que no cobraste.', CX, 236);
       ctx.fillStyle = `rgba(255,255,255,${0.6 + Math.sin(this.clock * 4) * 0.4})`;
       ctx.font = 'bold 18px system-ui, sans-serif';
       ctx.fillText('TOCÁ PARA EMPEZAR', CX, HEIGHT - 120);
@@ -522,15 +649,7 @@ export class Iman implements MiniGame {
 
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 44px system-ui, sans-serif';
-    ctx.fillText(String(this.score), CX, 70);
-    if (this.state === 'playing' && this.mult > 1) {
-      ctx.fillStyle = '#ffd23f';
-      ctx.font = 'bold 20px system-ui, sans-serif';
-      ctx.fillText(`x${this.mult}`, CX, 96);
-      // Combo timer bar: keep catching before it empties.
-      const w = 60 * Math.max(0, this.comboTimer / T.comboWindow);
-      ctx.fillRect(CX - w / 2, 104, w, 3);
-    }
+    ctx.fillText(String(Math.round(this.shownScore)), CX, 70);
 
     if (this.state === 'over') {
       ctx.fillStyle = 'rgba(5,4,11,0.6)';
@@ -541,9 +660,14 @@ export class Iman implements MiniGame {
       ctx.font = 'bold 16px system-ui, sans-serif';
       ctx.fillStyle = this.newBest ? '#ffd23f' : '#8f88c9';
       ctx.fillText(this.newBest ? '¡NUEVO RÉCORD!' : `Récord: ${this.best}`, CX, 284);
+      if (this.lost > 0) {
+        ctx.fillStyle = '#ff8a8a';
+        ctx.font = 'bold 15px system-ui, sans-serif';
+        ctx.fillText(`Perdiste ${this.lost} sin cobrar`, CX, 312);
+      }
       ctx.fillStyle = '#ffd23f';
       ctx.font = 'bold 20px system-ui, sans-serif';
-      ctx.fillText(`+${this.runCoins} ●`, CX, 340);
+      ctx.fillText(`+${this.runCoins} ●`, CX, 356);
       if (this.clock - this.overAt > 0.6) {
         ctx.fillStyle = `rgba(255,255,255,${0.6 + Math.sin(this.clock * 4) * 0.4})`;
         ctx.font = 'bold 18px system-ui, sans-serif';

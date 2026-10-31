@@ -1,31 +1,58 @@
 # IMÁN — documento de diseño
 
-> Mantené presionado para atraer. Los cristales llegan rápido. Las minas, lento.
+> Mantené presionado para atraer. Tocá el núcleo para cobrar. Si te toca una mina, perdés lo que no cobraste.
 
 ## Pitch
 
 Un núcleo en el centro de la pantalla. Cristales y minas cruzan flotando. Mientras
 mantenés presionado, el núcleo atrae **todo** lo que está dentro de su campo. Los
-cristales son livianos y llegan enseguida; las minas son pesadas y tardan. Si una
-mina toca el núcleo, perdés.
+cristales son livianos y llegan enseguida; las minas son pesadas y tardan.
 
-Un solo input, una regla que se entiende en 3 segundos y una decisión constante:
-*¿suelto ya o aguanto un poco más?*
+Lo que atrapás queda **guardado dentro del núcleo, sin cobrar**, y el núcleo
+**crece**: es un blanco más grande para las minas, pero también atrae más fuerte y
+desde más lejos. Tocar el núcleo **cobra** lo guardado con un multiplicador según
+la carga, y el núcleo vuelve a su tamaño original. Si una mina te toca, perdés todo
+lo que no cobraste y termina la partida.
+
+Dos decisiones constantes: *¿suelto ya o aguanto un poco más?* y *¿cobro ahora o lo
+dejo crecer?*
+
+## Cobro por tramos
+
+La carga es cuánto lleva el núcleo (cristal = 1, gema = 3). El multiplicador tiene
+que crecer más rápido que el riesgo, si no conviene cobrar siempre y la mecánica
+muere.
+
+| Carga | Multiplicador | Color del núcleo |
+| --- | --- | --- |
+| 0–4 | x1 | blanco |
+| 5–9 | x2 | celeste |
+| 10–19 | x3 | cian |
+| 20–34 | x5 | dorado |
+| 35+ | x8 | naranja (tamaño máximo) |
+
+Un anillo alrededor del núcleo muestra cuánto falta para el próximo tramo.
 
 ## Por qué engancha
 
 | Gancho | Cómo aparece en el juego |
 | --- | --- |
-| **Riesgo/recompensa en cada segundo** | Cuanto más tiempo mantenés, más cristales juntás, pero las minas ya vienen en camino. |
+| **Arriesgar o cobrar** | Cada cristal te acerca al próximo multiplicador y a la vez agranda el blanco. La codicia sube la dificultad, no el reloj. |
+| **Pérdida visible** | Al morir: "Perdiste 140 sin cobrar". El "casi" es lo que hace apretar reintentar. |
 | **Habilidad legible** | La diferencia de masa hace que los toques cortos sean una técnica que se aprende y se nota. |
-| **Casi-muertes** | "¡CERCA!" da puntos cuando una mina roza el núcleo y se va. Los sustos se convierten en premio. |
-| **Combo con reloj** | El multiplicador (hasta x8) sube cada 4 capturas y se pierde si dejás de atrapar. Castiga ser demasiado conservador. |
-| **Reintento instantáneo** | Partidas de 20 a 60 s y un toque para volver a jugar, sin menús. |
-| **Récord visible** | "¡NUEVO RÉCORD!" y las monedas ganadas aparecen en la misma pantalla de resultado. |
+| **Casi-muertes** | "¡CERCA!" da puntos (directos, sin riesgo) cuando una mina roza el núcleo y se va. |
+| **El sonido cuenta la tensión** | Cada captura suena más aguda que la anterior: cuanto más alto, más tenés en juego. Cobrar suena con un arpegio más largo cuanto mayor es el tramo. |
+| **Reintento instantáneo** | Partidas de 20 a 90 s y un toque para volver a jugar, sin menús. |
+
+## Controles
+
+- **Mantener fuera del núcleo:** atraer.
+- **Tocar el núcleo** (con algo guardado): cobrar. Ese toque no atrae aunque lo mantengas. Con el núcleo vacío, tocarlo atrae como cualquier otro lado, para que el jugador nuevo no se trabe.
+- La primera vez que llegás a x2 aparece "TOCÁ EL NÚCLEO PARA COBRAR" hasta que cobrás por primera vez.
 
 ## Bucle
 
-- **Núcleo (30 s):** tocar / mantener / soltar → combo → muerte.
+- **Núcleo (30 s):** mantener / soltar → cargar → cobrar o morir.
 - **Partida:** puntaje → monedas (1 cada 5 puntos) → récord.
 - **Meta (días):** monedas → mejoras y skins → desafíos diarios → volver mañana.
 
@@ -65,9 +92,15 @@ Todo está en el objeto `T` de [`src/games/iman.ts`](../src/games/iman.ts). Los 
 importantes para el feel:
 
 - `mine.mass` vs `shard.mass` en `KINDS`: la brecha de masa *es* el juego.
+- `TIERS`: los cortes y multiplicadores del cobro. Es el número más importante del juego.
+- `coreGrowth`, `coreMax`: cuánto castiga crecer.
+- `fieldGrowth`, `pullGrowth`: cuánto premia crecer.
 - `pullForce`, `pullDecay`: qué tan "pegajoso" se siente el imán.
 - `spawnRamp`, `mineRamp`: curva de dificultad (hoy el pico llega a ~50 s).
-- `comboWindow`: cuánto perdona el combo.
+
+**A vigilar en el test:** en una simulación con un jugador muy prudente, pasado el
+minuto la pantalla se llena de minas y se carga muy lento (de 2 a 21 en 90 s). Si
+un humano lo siente avaro, bajar `mineMax` o frenar `mineRamp`.
 
 ## Próximos pasos del prototipo
 

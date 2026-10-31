@@ -20,7 +20,7 @@ Cada minijuego se elige por hash en la URL, p. ej. `http://localhost:5173/#iman`
 
 | Juego | Idea | Diseño |
 | --- | --- | --- |
-| `iman` | Mantené presionado para atraer cristales sin tragarte una mina. | [docs/iman.md](docs/iman.md) |
+| `iman` | Atraé cristales, el núcleo crece; tocalo para cobrar antes de que una mina se lleve todo. | [docs/iman.md](docs/iman.md) |
 
 ## Estructura
 
