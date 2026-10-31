@@ -37,20 +37,30 @@ const T = {
   mineStart: 0.2,
   mineMax: 0.5,
   mineRamp: 0.006,
-  gemChance: 0.06,
+  yellowChance: 0.12,
+  pinkChance: 0.05,
   nearMissGap: 22,
   nearMissPoints: 5,
   pointsPerCoin: 5,
 };
 
-type Kind = 'shard' | 'gem' | 'mine';
+type Kind = 'cyan' | 'yellow' | 'pink' | 'mine';
 
-/** `load` is how much a catch grows the core; `value` is points stored. */
-const KINDS: Record<Kind, { r: number; mass: number; value: number; load: number; color: string }> = {
-  shard: { r: 7, mass: 1, value: 1, load: 1, color: '#29e7ff' },
-  gem: { r: 11, mass: 1.8, value: 10, load: 3, color: '#ff4fd8' },
-  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#ff3b3b' },
+/**
+ * Risk ladder: heavier gems answer the pull slower and pay more. Pink sits
+ * just under the mine's mass, so pulling one in means holding long enough
+ * to drag a mine too. `load` is how much a catch grows the core; `value` is
+ * points stored.
+ */
+const KINDS: Record<Kind, { r: number; mass: number; value: number; load: number; color: string; name: string }> = {
+  cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#29e7ff', name: 'Gema celeste' },
+  yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ffe14a', name: 'Gema amarilla' },
+  pink: { r: 11, mass: 3, value: 15, load: 3, color: '#ff4fd8', name: 'Gema rosa' },
+  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#ff3b3b', name: 'Mina' },
 };
+
+/** Order shown on the start screen legend. */
+const LEGEND: Kind[] = ['cyan', 'yellow', 'pink', 'mine'];
 
 /** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
 const TIERS = [
@@ -280,7 +290,14 @@ export class Iman implements MiniGame {
   private spawn() {
     const mineP = Math.min(T.mineMax, T.mineStart + this.time * T.mineRamp);
     const roll = Math.random();
-    const kind: Kind = roll < mineP ? 'mine' : roll < mineP + T.gemChance ? 'gem' : 'shard';
+    const kind: Kind =
+      roll < mineP
+        ? 'mine'
+        : roll < mineP + T.pinkChance
+          ? 'pink'
+          : roll < mineP + T.pinkChance + T.yellowChance
+            ? 'yellow'
+            : 'cyan';
 
     // Enter from a random edge, just off screen.
     const side = Math.floor(Math.random() * 4);
@@ -316,14 +333,19 @@ export class Iman implements MiniGame {
     this.bank += k.value;
     this.load += k.load;
     this.corePop = 1;
-    this.burst(CX, CY, k.color, b.kind === 'gem' ? 24 : 8, 140);
+    this.burst(CX, CY, k.color, 8 * k.load, 140);
+    this.popup(CX + rand(-24, 24), CY - this.coreR - 10, `+${k.value}`, k.color, 12 + k.load * 2);
 
     // Notes climb with the load: the higher the pitch, the more you risk.
     const step = Math.min(this.load, 24);
-    if (b.kind === 'gem') {
+    if (b.kind === 'pink') {
       tone({ freq: note(step), dur: 0.35, type: 'triangle', gain: 0.18 });
       tone({ freq: note(step + 2), dur: 0.35, type: 'triangle', gain: 0.12, delay: 0.06 });
-      vibrate(10);
+      tone({ freq: note(step + 4), dur: 0.35, type: 'triangle', gain: 0.1, delay: 0.12 });
+      vibrate(15);
+    } else if (b.kind === 'yellow') {
+      tone({ freq: note(step), dur: 0.22, type: 'triangle', gain: 0.17 });
+      tone({ freq: note(step + 2), dur: 0.22, type: 'triangle', gain: 0.1, delay: 0.05 });
     } else {
       tone({ freq: note(step), dur: 0.14, type: 'triangle', gain: 0.16 });
     }
@@ -430,7 +452,7 @@ export class Iman implements MiniGame {
     ctx.fillStyle = bg;
     ctx.fillRect(-20, -20, WIDTH + 40, HEIGHT + 40);
 
-    this.drawField(active);
+    if (this.state !== 'ready') this.drawField(active);
 
     const field = this.fieldRadius;
     for (const b of this.bodies) {
@@ -452,7 +474,7 @@ export class Iman implements MiniGame {
     }
     ctx.globalAlpha = 1;
 
-    if (this.state !== 'over') this.drawCore(active);
+    if (this.state === 'playing') this.drawCore(active);
 
     ctx.textAlign = 'center';
     for (const p of this.popups) {
@@ -487,18 +509,22 @@ export class Iman implements MiniGame {
   }
 
   private drawBody(b: Body) {
+    this.drawItem(b.kind, b.x, b.y, b.spin);
+  }
+
+  private drawItem(kind: Kind, x: number, y: number, spin: number) {
     const { ctx } = this;
-    const k = KINDS[b.kind];
+    const k = KINDS[kind];
     ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(b.spin);
+    ctx.translate(x, y);
+    ctx.rotate(spin);
     ctx.shadowColor = k.color;
-    ctx.shadowBlur = b.kind === 'shard' ? 8 : 16;
+    ctx.shadowBlur = 6 + k.load * 4;
     ctx.fillStyle = k.color;
     ctx.beginPath();
-    if (b.kind === 'mine') {
+    if (kind === 'mine') {
       const spikes = 8;
-      const pulse = 1 + Math.sin(this.clock * 8 + b.spin) * 0.08;
+      const pulse = 1 + Math.sin(this.clock * 8 + spin) * 0.08;
       for (let i = 0; i < spikes * 2; i++) {
         const r = (i % 2 === 0 ? k.r + 5 : k.r - 1) * pulse;
         const a = (i / (spikes * 2)) * Math.PI * 2;
@@ -513,7 +539,7 @@ export class Iman implements MiniGame {
     }
     ctx.closePath();
     ctx.fill();
-    if (b.kind === 'mine') {
+    if (kind === 'mine') {
       ctx.shadowBlur = 0;
       ctx.fillStyle = '#2a0000';
       ctx.beginPath();
@@ -606,6 +632,75 @@ export class Iman implements MiniGame {
     ctx.restore();
   }
 
+  /** Start screen: rules plus an arcade-style legend that reveals row by row. */
+  private drawTitle() {
+    const { ctx } = this;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '900 56px system-ui, sans-serif';
+    ctx.fillText('IMÁN', CX, 104);
+    ctx.font = '15px system-ui, sans-serif';
+    ctx.fillStyle = '#c9c4ff';
+    ctx.fillText('Mantené presionado para atraer.', CX, 142);
+    ctx.fillText('Tocá el núcleo para cobrar lo guardado.', CX, 164);
+    ctx.fillStyle = '#ff8a8a';
+    ctx.fillText('Si te toca una mina, perdés lo que no cobraste.', CX, 186);
+
+    const top = 236;
+    const rowH = 50;
+    const barX = 196;
+    const barW = 64;
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillStyle = '#6b6596';
+    ctx.textAlign = 'left';
+    ctx.fillText('PESO', barX, top - 6);
+    ctx.textAlign = 'right';
+    ctx.fillText('PUNTOS', 330, top - 6);
+
+    const maxMass = KINDS.mine.mass;
+    LEGEND.forEach((kind, i) => {
+      const t = this.clock - 0.4 - i * 0.35;
+      if (t < 0) return;
+      const k = KINDS[kind];
+      const y = top + 26 + i * rowH;
+      ctx.globalAlpha = Math.min(1, t * 4);
+
+      this.drawItem(kind, 52, y, this.clock * (kind === 'mine' ? 1.2 : 2));
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 15px system-ui, sans-serif';
+      ctx.fillText(k.name, 78, y + 5);
+
+      // Weight bar fills in, so pink visibly lands right next to the mine.
+      const fill = (k.mass / maxMass) * Math.min(1, t * 2);
+      ctx.fillStyle = '#2a2550';
+      ctx.fillRect(barX, y - 3, barW, 6);
+      ctx.fillStyle = k.color;
+      ctx.fillRect(barX, y - 3, barW * fill, 6);
+
+      ctx.textAlign = 'right';
+      ctx.font = `900 ${kind === 'mine' ? 13 : 18}px system-ui, sans-serif`;
+      ctx.fillStyle = kind === 'mine' ? '#ff8a8a' : k.color;
+      ctx.fillText(kind === 'mine' ? '¡PERDÉS!' : `+${k.value}`, 330, y + 6);
+    });
+    ctx.globalAlpha = 1;
+
+    const after = this.clock - 0.4 - LEGEND.length * 0.35;
+    if (after > 0) {
+      ctx.globalAlpha = Math.min(1, after * 3);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#c9c4ff';
+      ctx.font = '14px system-ui, sans-serif';
+      ctx.fillText('Más pesada, más tarda en llegar... y más paga.', CX, top + LEGEND.length * rowH + 30);
+      ctx.fillText('Más carga en el núcleo = más multiplicador.', CX, top + LEGEND.length * rowH + 52);
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = `rgba(255,255,255,${0.6 + Math.sin(this.clock * 4) * 0.4})`;
+      ctx.font = 'bold 18px system-ui, sans-serif';
+      ctx.fillText('TOCÁ PARA EMPEZAR', CX, HEIGHT - 90);
+    }
+  }
+
   private drawHud() {
     const { ctx } = this;
     if (this.state === 'playing') {
@@ -619,19 +714,7 @@ export class Iman implements MiniGame {
     if (this.state !== 'playing') this.drawMuteIcon();
 
     if (this.state === 'ready') {
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '900 56px system-ui, sans-serif';
-      ctx.fillText('IMÁN', CX, 130);
-      ctx.font = '15px system-ui, sans-serif';
-      ctx.fillStyle = '#c9c4ff';
-      ctx.fillText('Mantené presionado para atraer.', CX, 170);
-      ctx.fillText('Tocá el núcleo para cobrar lo que juntaste.', CX, 192);
-      ctx.fillText('Más carga = más multiplicador... y más grande.', CX, 214);
-      ctx.fillStyle = '#ff8a8a';
-      ctx.fillText('Si te toca una mina, perdés lo que no cobraste.', CX, 236);
-      ctx.fillStyle = `rgba(255,255,255,${0.6 + Math.sin(this.clock * 4) * 0.4})`;
-      ctx.font = 'bold 18px system-ui, sans-serif';
-      ctx.fillText('TOCÁ PARA EMPEZAR', CX, HEIGHT - 120);
+      this.drawTitle();
       return;
     }
 

@@ -4,9 +4,9 @@
 
 ## Pitch
 
-Un núcleo en el centro de la pantalla. Cristales y minas cruzan flotando. Mientras
-mantenés presionado, el núcleo atrae **todo** lo que está dentro de su campo. Los
-cristales son livianos y llegan enseguida; las minas son pesadas y tardan.
+Un núcleo en el centro de la pantalla. Gemas y minas cruzan flotando. Mientras
+mantenés presionado, el núcleo atrae **todo** lo que está dentro de su campo. Cuanto
+más pesado algo, más tarda en llegar.
 
 Lo que atrapás queda **guardado dentro del núcleo, sin cobrar**, y el núcleo
 **crece**: es un blanco más grande para las minas, pero también atrae más fuerte y
@@ -17,9 +17,24 @@ lo que no cobraste y termina la partida.
 Dos decisiones constantes: *¿suelto ya o aguanto un poco más?* y *¿cobro ahora o lo
 dejo crecer?*
 
+## Ítems: escalera de riesgo
+
+| Ítem | Peso | Puntos | Carga | Aparición |
+| --- | --- | --- | --- | --- |
+| Gema celeste | 1 | 1 | 1 | la más común |
+| Gema amarilla | 2 | 5 | 2 | 12 % |
+| Gema rosa | 3 | 15 | 3 | 5 % |
+| Mina | 3,4 | perdés lo no cobrado | — | 20 % → 50 % con el tiempo |
+
+La gema rosa pesa casi lo mismo que una mina: para traerla tenés que mantener tanto
+como para arrastrar una mina también. Cada rosa en pantalla es un "¿me la juego?".
+
+La pantalla de inicio muestra esta tabla al estilo arcade: las filas aparecen una
+por una, con una barra de peso que deja la rosa visualmente pegada a la mina.
+
 ## Cobro por tramos
 
-La carga es cuánto lleva el núcleo (cristal = 1, gema = 3). El multiplicador tiene
+La carga es cuánto lleva el núcleo (ver tabla de ítems). El multiplicador tiene
 que crecer más rápido que el riesgo, si no conviene cobrar siempre y la mecánica
 muere.
 
@@ -37,7 +52,7 @@ Un anillo alrededor del núcleo muestra cuánto falta para el próximo tramo.
 
 | Gancho | Cómo aparece en el juego |
 | --- | --- |
-| **Arriesgar o cobrar** | Cada cristal te acerca al próximo multiplicador y a la vez agranda el blanco. La codicia sube la dificultad, no el reloj. |
+| **Arriesgar o cobrar** | Cada gema te acerca al próximo multiplicador y a la vez agranda el blanco. La codicia sube la dificultad, no el reloj. |
 | **Pérdida visible** | Al morir: "Perdiste 140 sin cobrar". El "casi" es lo que hace apretar reintentar. |
 | **Habilidad legible** | La diferencia de masa hace que los toques cortos sean una técnica que se aprende y se nota. |
 | **Casi-muertes** | "¡CERCA!" da puntos (directos, sin riesgo) cuando una mina roza el núcleo y se va. |
@@ -76,7 +91,7 @@ ver, más compras chicas. Nada de pay-to-win en el puntaje competitivo.
    - *Quitar anuncios* (interstitials), ~USD 2,99. Los videos con recompensa siguen disponibles.
    - *Pack de inicio:* sin anuncios + monedas + skin exclusiva, una sola vez.
    - *Skins* del núcleo, del campo y de las partículas (puramente cosméticas).
-4. **En qué se gastan las monedas:** mejoras con tope (radio del campo +, cristales con imán propio, escudo de 1 golpe al inicio) y skins. Las mejoras hacen sentir progreso sin romper el récord global (la tabla de posiciones puede ir sin mejoras).
+4. **En qué se gastan las monedas:** mejoras con tope (radio del campo +, gemas con imán propio, escudo de 1 golpe al inicio) y skins. Las mejoras hacen sentir progreso sin romper el récord global (la tabla de posiciones puede ir sin mejoras).
 
 ## Qué medir en el test
 
@@ -113,4 +128,4 @@ un humano lo siente avaro, bajar `mineMax` o frenar `mineRamp`.
 - [ ] Sonido: zumbido del campo que sube de tono mientras mantenés; "tink" por captura, cada vez más agudo con el combo.
 - [ ] Vibración (`navigator.vibrate`) en casi-muertes y en la muerte.
 - [ ] Prototipo de la segunda oportunidad (sin SDK de anuncios, solo el flujo).
-- [ ] Probar variantes: minas que *repelen* al soltar, cristales dorados que solo valen si llegan en combo.
+- [ ] Probar variantes: minas que *repelen* al soltar, gemas que solo valen si llegan seguidas.
