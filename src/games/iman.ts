@@ -36,20 +36,45 @@ const T = {
   pointsPerCoin: 5,
 };
 
-type Kind = 'cyan' | 'yellow' | 'pink' | 'mine';
+type ShieldKind = 'shield' | 'pizza';
+type Kind = 'cyan' | 'yellow' | 'pink' | 'mine' | ShieldKind;
+
+interface KindDef {
+  r: number;
+  mass: number;
+  value: number; // points stored on catch
+  load: number; // how much a catch grows the core
+  color: string;
+  name: string;
+  blurb?: string; // banner line instead of "+value"
+}
 
 /**
  * Risk ladder: heavier gems answer the pull slower and pay more. Pink sits
  * just under the mine's mass, so pulling one in means holding long enough
- * to drag a mine too. `load` is how much a catch grows the core; `value` is
- * points stored.
+ * to drag a mine too. Shields are about as heavy as a mine for the same reason.
  */
-const KINDS: Record<Kind, { r: number; mass: number; value: number; load: number; color: string; name: string }> = {
+const KINDS: Record<Kind, KindDef> = {
   cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#29e7ff', name: 'Gema celeste' },
   yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ffe14a', name: 'Gema amarilla' },
   pink: { r: 11, mass: 3, value: 15, load: 3, color: '#ff4fd8', name: 'Gema rosa' },
   mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#ff3b3b', name: 'Mina' },
+  shield: { r: 11, mass: 3.2, value: 0, load: 0, color: '#ffffff', name: 'Escudo', blurb: 'Aguanta 1 mina' },
+  pizza: {
+    r: 11,
+    mass: 3.2,
+    value: 0,
+    load: 0,
+    color: '#b48cff',
+    name: 'Escudo pizza',
+    blurb: 'Cada mina rompe solo 1 porción',
+  },
 };
+
+/** How many slices each shield has; a mine breaks only the slice it hits. */
+const SHIELD_SLICES: Record<ShieldKind, number> = { shield: 1, pizza: 6 };
+
+const isShield = (k: Kind): k is ShieldKind => k === 'shield' || k === 'pizza';
 
 /** Order shown on the start screen legend. */
 const LEGEND: Kind[] = ['cyan', 'yellow', 'pink', 'mine'];
@@ -60,19 +85,44 @@ interface Phase {
   bag: Partial<Record<Kind, number>>; // spawn mix per 10, dealt shuffled
   title?: string; // banner shown when the phase starts
   intro?: Kind; // new item: spawned first and featured on the banner
+  shields?: ShieldKind[]; // shields that may drop at random during the phase
 }
 
 /**
  * Pacing: each phase introduces one thing. Spawns are dealt from a shuffled
- * bag so the mix always holds (no droughts, no mine streaks).
+ * bag so the mix always holds (no droughts, no mine streaks). Shields are
+ * rare drops on their own random timer, outside the bag.
  */
 const PHASES: Phase[] = [
   { at: 0, interval: 0.8, bag: { cyan: 8, mine: 2 } },
   { at: 15, interval: 0.7, bag: { cyan: 5, yellow: 2, mine: 3 }, title: '¡NUEVA GEMA!', intro: 'yellow' },
   { at: 35, interval: 0.6, bag: { cyan: 4, yellow: 2, pink: 1, mine: 3 }, title: '¡NUEVA GEMA!', intro: 'pink' },
-  { at: 60, interval: 0.48, bag: { cyan: 3, yellow: 2, pink: 1, mine: 4 }, title: '¡MÁS MINAS!' },
-  { at: 90, interval: 0.36, bag: { cyan: 2, yellow: 2, pink: 1, mine: 5 }, title: '¡CAOS!' },
+  {
+    at: 55,
+    interval: 0.5,
+    bag: { cyan: 3, yellow: 2, pink: 1, mine: 4 },
+    title: '¡NUEVO ESCUDO!',
+    intro: 'shield',
+    shields: ['shield'],
+  },
+  {
+    at: 80,
+    interval: 0.45,
+    bag: { cyan: 3, yellow: 2, pink: 1, mine: 4 },
+    title: '¡NUEVO ESCUDO!',
+    intro: 'pizza',
+    shields: ['shield', 'pizza'],
+  },
+  {
+    at: 105,
+    interval: 0.36,
+    bag: { cyan: 2, yellow: 2, pink: 1, mine: 5 },
+    title: '¡CAOS!',
+    shields: ['shield', 'pizza'],
+  },
 ];
+const SHIELD_DROP_MIN = 10; // seconds between random shield drops
+const SHIELD_DROP_MAX = 18;
 const MAX_MINE_STREAK = 2;
 
 /** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
@@ -142,6 +192,9 @@ export class Iman implements MiniGame {
   private bag: Kind[] = [];
   private mineStreak = 0; // consecutive mines dealt so far
   private bannerAt = -99; // clock time the current phase banner appeared
+  private shieldTimer = 0; // countdown to the next random shield drop
+  private shieldKind: ShieldKind | null = null;
+  private slices: boolean[] = []; // which shield slices are still up
   private score = 0;
   private shownScore = 0; // counts up toward score
   private bank = 0; // points stored in the core, not yet cashed
@@ -173,6 +226,41 @@ export class Iman implements MiniGame {
 
   private get fieldRadius() {
     return T.fieldRadius + T.fieldGrowth * this.growth;
+  }
+
+  /** The shield bubble sits just outside the core and grows with it. */
+  private get shieldR() {
+    return this.coreR + 18;
+  }
+
+  /** Which slice covers the direction from the core to (x, y). */
+  private sliceAt(x: number, y: number) {
+    const n = this.slices.length;
+    const a = (Math.atan2(y - CY, x - CX) + Math.PI * 2) % (Math.PI * 2);
+    return Math.min(n - 1, Math.floor((a / (Math.PI * 2)) * n));
+  }
+
+  /** A mine reached the bubble: true if a standing slice absorbed it. */
+  private blockMine(mine: Body) {
+    if (!this.shieldKind) return false;
+    const i = this.sliceAt(mine.x, mine.y);
+    if (!this.slices[i]) return false; // gap: the mine goes through
+
+    this.slices[i] = false;
+    const color = this.shieldKind === 'shield' ? '#ffffff' : this.sliceColor(i);
+    this.burst(mine.x, mine.y, '#ff3b3b', 18, 200);
+    this.burst(mine.x, mine.y, color, 14, 160);
+    this.popup(mine.x, mine.y - 14, '¡BLOQUEADA!', color);
+    this.shake = 0.15;
+    noise(0.25, 0.3, 4000);
+    tone({ freq: 1800, to: 600, dur: 0.2, type: 'triangle', gain: 0.12 });
+    vibrate(40);
+    if (!this.slices.some(Boolean)) this.shieldKind = null;
+    return true;
+  }
+
+  private sliceColor(i: number) {
+    return `hsl(${(this.clock * 90 + i * 60) % 360}, 100%, 70%)`;
   }
 
   private targetCoreR() {
@@ -239,8 +327,17 @@ export class Iman implements MiniGame {
 
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      this.spawn();
+      this.spawn(this.nextKind());
       this.spawnTimer = PHASES[this.phase].interval;
+    }
+
+    const drops = PHASES[this.phase].shields;
+    if (drops) {
+      this.shieldTimer -= dt;
+      if (this.shieldTimer <= 0) {
+        this.spawn(drops[Math.floor(Math.random() * drops.length)]);
+        this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
+      }
     }
 
     const decay = Math.exp(-T.pullDecay * dt);
@@ -268,6 +365,11 @@ export class Iman implements MiniGame {
       ox = CX - b.x;
       oy = CY - b.y;
       d = Math.hypot(ox, oy);
+
+      if (b.kind === 'mine' && d < this.shieldR + k.r && this.blockMine(b)) {
+        b.dead = true;
+        continue;
+      }
 
       if (d < this.coreR + k.r) {
         b.dead = true;
@@ -308,6 +410,9 @@ export class Iman implements MiniGame {
     this.bag = [];
     this.mineStreak = 0;
     this.bannerAt = -99;
+    this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
+    this.shieldKind = null;
+    this.slices = [];
     tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
   }
 
@@ -317,6 +422,8 @@ export class Iman implements MiniGame {
     // New item goes first so it shows up while the banner is on screen.
     this.bag = p.intro ? [p.intro] : [];
     this.spawnTimer = Math.min(this.spawnTimer, 0.4);
+    // A shield intro is this phase's first drop; random drops follow after.
+    if (p.intro && isShield(p.intro)) this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
     this.bannerAt = this.clock;
     [0, 2, 4, 7].forEach((s, j) => tone({ freq: note(s + 3), dur: 0.18, type: 'square', gain: 0.07, delay: j * 0.08 }));
     vibrate(25);
@@ -352,9 +459,7 @@ export class Iman implements MiniGame {
     return kind;
   }
 
-  private spawn() {
-    const kind = this.nextKind();
-
+  private spawn(kind: Kind) {
     // Enter from a random edge, just off screen.
     const side = Math.floor(Math.random() * 4);
     const x = side === 0 ? -20 : side === 1 ? WIDTH + 20 : rand(0, WIDTH);
@@ -385,6 +490,17 @@ export class Iman implements MiniGame {
 
   private collect(b: Body) {
     const k = KINDS[b.kind];
+    if (isShield(b.kind)) {
+      // A new shield replaces the current one, fully intact.
+      this.shieldKind = b.kind;
+      this.slices = new Array(SHIELD_SLICES[b.kind]).fill(true);
+      this.corePop = 1;
+      this.burst(CX, CY, k.color, 30, 180);
+      this.popup(CX, CY - this.shieldR - 14, `¡${k.name.toUpperCase()}!`, k.color, 18);
+      [0, 4, 7, 12].forEach((s, i) => tone({ freq: note(s), dur: 0.25, type: 'sine', gain: 0.14, delay: i * 0.06 }));
+      vibrate(20);
+      return;
+    }
     const tierBefore = this.tierIndex;
     this.bank += k.value;
     this.load += k.load;
@@ -568,7 +684,59 @@ export class Iman implements MiniGame {
     this.drawItem(b.kind, b.x, b.y, b.spin);
   }
 
+  /** Round pickups: plain white bubble, or a pizza whose slices cycle colors. */
+  private drawShieldIcon(kind: ShieldKind, x: number, y: number, spin: number) {
+    const { ctx } = this;
+    const r = KINDS[kind].r;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(spin);
+    if (kind === 'shield') {
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 16;
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      // Glint so it reads as a bubble, not a coin.
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(-r * 0.35, -r * 0.35, r * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      const n = SHIELD_SLICES.pizza;
+      ctx.shadowColor = this.sliceColor(0);
+      ctx.shadowBlur = 16;
+      for (let i = 0; i < n; i++) {
+        const a0 = (i / n) * Math.PI * 2;
+        const a1 = ((i + 1) / n) * Math.PI * 2;
+        ctx.fillStyle = this.sliceColor(i);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, r, a0, a1);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#05040b';
+      ctx.lineWidth = 1.5;
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   private drawItem(kind: Kind, x: number, y: number, spin: number) {
+    if (isShield(kind)) return this.drawShieldIcon(kind, x, y, spin);
     const { ctx } = this;
     const k = KINDS[kind];
     ctx.save();
@@ -605,6 +773,39 @@ export class Iman implements MiniGame {
     ctx.restore();
   }
 
+  /** Active shield: a full bubble, or pizza slices with gaps where mines broke through. */
+  private drawShieldBubble() {
+    if (!this.shieldKind) return;
+    const { ctx } = this;
+    const R = this.shieldR + Math.sin(this.clock * 3) * 1.5;
+    const n = this.slices.length;
+    const gap = n > 1 ? 0.06 : 0;
+    ctx.save();
+    ctx.lineWidth = 3;
+    for (let i = 0; i < n; i++) {
+      if (!this.slices[i]) continue;
+      const a0 = (i / n) * Math.PI * 2 + gap;
+      const a1 = ((i + 1) / n) * Math.PI * 2 - gap;
+      const color = this.shieldKind === 'shield' ? '#ffffff' : this.sliceColor(i);
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.arc(CX, CY, R, a0, a1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 0.75;
+      ctx.strokeStyle = color;
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(CX, CY, R, a0, a1);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+  }
+
   private drawCore(active: boolean) {
     const { ctx } = this;
     const ti = this.tierIndex;
@@ -619,6 +820,10 @@ export class Iman implements MiniGame {
     ctx.arc(CX, CY, r, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
+
+    this.drawShieldBubble();
+    // Labels under the core clear the shield bubble when there is one.
+    const below = this.shieldKind ? 44 : 26;
 
     // Progress ring toward the next tier; full and pulsing at the top tier.
     const next = TIERS[ti + 1];
@@ -644,7 +849,7 @@ export class Iman implements MiniGame {
       if (tier.mult > 1) {
         ctx.fillStyle = tier.color;
         ctx.font = '900 16px system-ui, sans-serif';
-        ctx.fillText(`x${tier.mult}`, CX, CY + r + 26);
+        ctx.fillText(`x${tier.mult}`, CX, CY + r + below);
       }
     }
 
@@ -652,7 +857,7 @@ export class Iman implements MiniGame {
       ctx.fillStyle = `rgba(255,210,63,${0.6 + Math.sin(this.clock * 6) * 0.4})`;
       ctx.textAlign = 'center';
       ctx.font = 'bold 14px system-ui, sans-serif';
-      ctx.fillText('TOCÁ EL NÚCLEO PARA COBRAR', CX, CY + r + 50);
+      ctx.fillText('TOCÁ EL NÚCLEO PARA COBRAR', CX, CY + r + below + 24);
     }
   }
 
@@ -782,12 +987,19 @@ export class Iman implements MiniGame {
     if (p.intro) {
       const k = KINDS[p.intro];
       ctx.font = 'bold 16px system-ui, sans-serif';
-      const label = `${k.name}  +${k.value}`;
+      // Shields have no points to show, so they get a name line plus a how-it-works line.
+      const label = k.blurb ? k.name : `${k.name}  +${k.value}`;
       const w = ctx.measureText(label).width;
       this.drawItem(p.intro, -w / 2 - 6, 26, this.clock * 2);
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'left';
       ctx.fillText(label, -w / 2 + 12, 32);
+      if (k.blurb) {
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#c9c4ff';
+        ctx.font = '14px system-ui, sans-serif';
+        ctx.fillText(k.blurb, 0, 54);
+      }
     }
     ctx.restore();
   }

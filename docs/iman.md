@@ -34,23 +34,39 @@ por una, con una barra de peso que deja la rosa visualmente pegada a la mina.
 
 ## Fases
 
-Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVA GEMA!" con ícono y
-valor, "¡MÁS MINAS!", "¡CAOS!"). Cuando entra una gema nueva, es lo primero que
-aparece en esa fase, así el jugador la ve mientras está el cartel. Arriba, debajo
-del puntaje, se ve "FASE N".
+Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVA GEMA!" o "¡NUEVO
+ESCUDO!" con ícono, "¡CAOS!"). Cuando entra algo nuevo, es lo primero que aparece
+en esa fase, así el jugador lo ve mientras está el cartel. Arriba, debajo del
+puntaje, se ve "FASE N".
 
-| Fase | Desde | Mezcla cada 10 apariciones | Una aparición cada |
-| --- | --- | --- | --- |
-| 1 | 0 s | 8 celestes, 2 minas | 0,8 s |
-| 2 — ¡NUEVA GEMA! amarilla | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s |
-| 3 — ¡NUEVA GEMA! rosa | 35 s | 4 celestes, 2 amarillas, 1 rosa, 3 minas | 0,6 s |
-| 4 — ¡MÁS MINAS! | 60 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,48 s |
-| 5 — ¡CAOS! | 90 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s |
+| Fase | Desde | Mezcla cada 10 apariciones | Una aparición cada | Escudos al azar |
+| --- | --- | --- | --- | --- |
+| 1 | 0 s | 8 celestes, 2 minas | 0,8 s | — |
+| 2 — ¡NUEVA GEMA! amarilla | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — |
+| 3 — ¡NUEVA GEMA! rosa | 35 s | 4 celestes, 2 amarillas, 1 rosa, 3 minas | 0,6 s | — |
+| 4 — ¡NUEVO ESCUDO! simple | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple |
+| 5 — ¡NUEVO ESCUDO! pizza | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza |
+| 6 — ¡CAOS! | 105 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s | simple o pizza |
 
 **Bolsa en vez de dado:** las apariciones se reparten de una bolsa mezclada con la
 mezcla de la fase, así las proporciones se cumplen siempre (sin rachas raras ni
 minutos sin rosas). Además nunca salen más de 2 minas seguidas. La velocidad de las
 gemas sigue subiendo de a poco con el tiempo.
+
+## Escudos
+
+Se atraen como cualquier ítem y pesan **3,2** (casi como una mina), así que traer
+uno es tan arriesgado como traer una mina. No suman puntos ni carga. Al atraparlo
+aparece una burbuja alrededor del núcleo que crece con él.
+
+| Escudo | Ícono | Qué hace |
+| --- | --- | --- |
+| Escudo | redondo blanco | La primera mina que toca la burbuja explota sin hacerte nada; la burbuja se rompe. |
+| Escudo pizza | redondo, 6 porciones que cambian de color | La burbuja tiene 6 porciones. Una mina rompe solo la porción por donde entra; las otras siguen protegiendo. Una mina que entra por un hueco te toca. |
+
+- El primero de cada tipo llega con su cartel (simple a los 55 s, pizza a los 80 s). Después caen al azar cada 10–18 s.
+- Agarrar un escudo teniendo otro lo reemplaza por el nuevo, completo.
+- Cobrar no saca el escudo; morir sí.
 
 ## Cobro por tramos
 
