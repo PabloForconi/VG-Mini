@@ -349,10 +349,12 @@ function buildCoreGlow(color: string): HTMLCanvasElement {
 /** Particle vortex around the core: cheap (one tiny rect per mote, no blur). */
 const VORTEX = {
   count: 48,
-  idle: 0.45, // fall cycles per second when not pulling
-  pull: 1.2, // … and while the magnet is held
-  reach: 58, // px from the core edge where motes appear
-  growReach: 30, // extra reach at max core size
+  idle: 0.12, // fall cycles per second when not touching: a slow, lazy turn
+  pull: 1.4, // … at a full hold
+  openTime: 2.5, // seconds of holding to open all the way (same as the hum's peak)
+  reachIdle: 12, // px from the core edge where motes appear when closed (snug)
+  reachOpen: 64, // … when fully open
+  growReach: 24, // extra open reach at max core size
   curl: 4.2, // radians a mote turns on its way in
   colors: ['#9b7bff', '#5ad1ff', '#e38bff'],
 };
@@ -477,6 +479,9 @@ interface RunResult {
 
 const RUNS_KEY = 'growcore.runs';
 const MAX_RUNS = 200; // plenty for a personal board; keeps storage tiny
+/** Bump to wipe every device's local board (points and coins) once, on its next load. */
+const BOARD_VERSION = 1;
+const BOARD_VERSION_KEY = 'growcore.boardVersion';
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -521,12 +526,16 @@ export class Growcore implements MiniGame {
   private corePop = 0;
   private holdTime = 0;
   private vortexT = 0; // vortex phase; advances faster while the magnet is held
-  private vortexSpeed = VORTEX.idle;
+  private vortexOpen = 0; // 0 = snug and slow (idle) … 1 = wide and fast (long hold)
   private hum = new Drone();
 
   constructor(private ctx: CanvasRenderingContext2D) {
     // Canvas only uses a web font once it has loaded; ask for every weight up front.
     for (const w of [400, 600, 700]) void document.fonts?.load(font(w, 16));
+    if (loadNumber(BOARD_VERSION_KEY) < BOARD_VERSION) {
+      saveJSON(RUNS_KEY, []);
+      saveNumber(BOARD_VERSION_KEY, BOARD_VERSION);
+    }
   }
 
   private get tierIndex() {
@@ -631,10 +640,12 @@ export class Growcore implements MiniGame {
     const h = Math.min(this.holdTime, 2.5);
     this.hum.set(this.holdTime > 0 ? 0.05 + h * 0.025 : 0, 65 + h * 45);
 
-    // The vortex speeds up while pulling and eases back on release.
-    const vTarget = this.holdTime > 0 ? VORTEX.pull : VORTEX.idle;
-    this.vortexSpeed += (vTarget - this.vortexSpeed) * Math.min(1, dt * 4);
-    this.vortexT += dt * this.vortexSpeed;
+    // The vortex opens up and spins faster the longer you hold; on release it closes back
+    // in snug against the core and slows to a lazy turn.
+    const openTarget = Math.min(1, this.holdTime / VORTEX.openTime);
+    const rate = openTarget > this.vortexOpen ? 6 : 2.5; // follow the hold closely, settle gently
+    this.vortexOpen += (openTarget - this.vortexOpen) * Math.min(1, dt * rate);
+    this.vortexT += dt * (VORTEX.idle + (VORTEX.pull - VORTEX.idle) * this.vortexOpen);
 
     if (this.state !== 'playing' && press === 'pointer' && this.hitMute()) {
       setMuted(!isMuted());
@@ -1080,7 +1091,8 @@ export class Growcore implements MiniGame {
   /** Motes of light spiralling into the core (drawn under it, so they vanish as they arrive). */
   private drawVortex() {
     const { ctx } = this;
-    const reach = VORTEX.reach + this.growth * VORTEX.growReach;
+    const open = this.vortexOpen;
+    const reach = VORTEX.reachIdle + (VORTEX.reachOpen + this.growth * VORTEX.growReach - VORTEX.reachIdle) * open;
     for (let i = 0; i < VORTEX.count; i++) {
       const u = (this.vortexT + i / VORTEX.count) % 1; // 0 = outer edge … 1 = swallowed
       const r = this.coreR + 2 + (1 - u) * reach;
@@ -1214,15 +1226,15 @@ export class Growcore implements MiniGame {
       ctx.arc(CX, CY, R, a0, a1);
       ctx.closePath();
       ctx.fill();
-      // Wide faint stroke behind a crisp one stands in for a glow (no blur).
+      // Same thin rim as the pickup bubbles, with a wide faint stroke behind it for glow (no blur).
       ctx.strokeStyle = '#ffffff';
-      ctx.globalAlpha = 0.2;
-      ctx.lineWidth = 8;
+      ctx.globalAlpha = 0.18;
+      ctx.lineWidth = 5;
       ctx.beginPath();
       ctx.arc(CX, CY, R, a0, a1);
       ctx.stroke();
       ctx.globalAlpha = 1;
-      ctx.lineWidth = 3;
+      ctx.lineWidth = 1.3;
       ctx.stroke();
     }
     ctx.restore();

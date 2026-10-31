@@ -128,7 +128,9 @@ Los colores están en `C`, `KINDS` y `TIERS` de
 
 **Puntaje y monedas:** cada partida empieza en 0 puntos y 0 monedas. Al terminar,
 la partida (puntos, monedas, fecha) se guarda en una **tabla local** del
-dispositivo, ordenada de mejor a peor (hasta 200 partidas).
+dispositivo, ordenada de mejor a peor (hasta 200 partidas). Para borrar la tabla de
+todos los dispositivos una vez (por ejemplo, al cambiar cómo se puntúa), se sube
+`BOARD_VERSION` en el código: cada dispositivo la vacía la próxima vez que carga.
 
 **Pantalla final ("escalera"):** muestra cuántas gemas se perdieron ("Perdiste 7
 gemas", si había gemas en el núcleo), el puntaje grande, las monedas ganadas y tres
