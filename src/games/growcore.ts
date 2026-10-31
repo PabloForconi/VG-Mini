@@ -349,14 +349,20 @@ function buildCoreGlow(color: string): HTMLCanvasElement {
 /** Particle vortex around the core: cheap (one tiny rect per mote, no blur). */
 const VORTEX = {
   count: 48,
-  idle: 0.12, // fall cycles per second when not touching: a slow, lazy turn
-  pull: 1.4, // … at a full hold
+  fallIdle: 0.12, // fall cycles per second when not touching
+  fallPull: 1.4, // … at a full hold
   openTime: 2.5, // seconds of holding to open all the way (same as the hum's peak)
-  reachIdle: 12, // px from the core edge where motes appear when closed (snug)
+  reachIdle: 4, // px from the core edge where motes appear when closed (hugging it)
   reachOpen: 64, // … when fully open
   growReach: 24, // extra open reach at max core size
-  curl: 4.2, // radians a mote turns on its way in
-  colors: ['#9b7bff', '#5ad1ff', '#e38bff'],
+  curl: 2.2, // extra radians a mote turns as it falls in (keeps a spiral shape)
+  // Spin has inertia: it spins up with effort and coasts down slowly, like a top.
+  spinIdle: 0.6, // rad/s at the core's edge when idle
+  spinMax: 6.5, // … at a full hold
+  spinUp: 1.8, // how quickly spin catches up when speeding up (1/s)
+  spinDown: 0.6, // … when slowing down: lower = longer coast
+  // Inner motes orbit faster than outer ones (like water down a drain): ω ∝ (edge / r)^shear.
+  shear: 1.3,
 };
 
 const SKY_MARGIN = 20; // baked past the screen edges so screen shake never shows a seam
@@ -438,6 +444,7 @@ interface Particle {
   size: number;
   color: string;
   drag: number; // velocity kept per tick; closer to 1 = flies farther
+  fall?: number; // downward acceleration (px/s²), for confetti
 }
 
 interface BurstStyle {
@@ -445,6 +452,31 @@ interface BurstStyle {
   life: [number, number]; // seconds, min..max
   size: [number, number];
 }
+
+/**
+ * Results screen timeline, in seconds after death. Short on purpose: the whole screen
+ * settles in ~1.3 s, and a tap retries from 0.6 s on even mid-animation.
+ */
+const RES = {
+  veil: 0.3, // dark veil fades in over this long
+  lost: 0.12, // "Perdiste N gemas" drops in
+  countStart: 0.2, // score counts up …
+  countEnd: 0.75, // … and pops
+  coinsStart: 0.55,
+  coinsEnd: 0.9,
+  rows: 0.85, // ladder rows start sliding in
+  rowStep: 0.09, // stagger between rows
+  rowDur: 0.28,
+  msg: 1.12, // "Te faltaron…" / record stamp
+  retry: 1.25, // retry prompt fades in
+};
+
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
+/** Overshoots a little before settling: things "land". */
+const easeOutBack = (x: number) => 1 + 2.7 * (x - 1) ** 3 + 1.7 * (x - 1) ** 2;
+/** Brief scale kick after an event: 0.18 at the moment, fading to 0 over 0.3 s. */
+const pop = (since: number) => (since >= 0 && since < 0.3 ? 0.18 * (1 - since / 0.3) : 0);
 
 /** Catch sparks stay close to the core; cash-outs fling far so they feel like a payout. */
 const SPARKS: BurstStyle = { drag: 0.92, life: [0.3, 0.7], size: [2, 4] };
@@ -489,6 +521,8 @@ export class Growcore implements MiniGame {
   private state: State = 'ready';
   private bodies: Body[] = [];
   private particles: Particle[] = [];
+  private uiParticles: Particle[] = []; // results-screen sparks/confetti, drawn above the veil
+  private resultsFx = { lastTick: 0, score: false, coins: false, msg: false }; // beats already fired
   private popups: Popup[] = [];
   private clock = 0; // seconds since boot, drives animation
   private time = 0; // seconds into the current run
@@ -525,8 +559,11 @@ export class Growcore implements MiniGame {
   private shake = 0;
   private corePop = 0;
   private holdTime = 0;
-  private vortexT = 0; // vortex phase; advances faster while the magnet is held
+  private vortexT = 0; // infall phase; advances faster while the magnet is held
   private vortexOpen = 0; // 0 = snug and slow (idle) … 1 = wide and fast (long hold)
+  private vortexSpin = VORTEX.spinIdle; // current spin (rad/s at the core edge), with inertia
+  // Each mote's own orbit angle, integrated every tick so inner motes really do lap outer ones.
+  private moteAngles = Float32Array.from({ length: VORTEX.count }, (_, i) => i * 2.39996);
   private hum = new Drone();
 
   constructor(private ctx: CanvasRenderingContext2D) {
@@ -645,7 +682,15 @@ export class Growcore implements MiniGame {
     const openTarget = Math.min(1, this.holdTime / VORTEX.openTime);
     const rate = openTarget > this.vortexOpen ? 6 : 2.5; // follow the hold closely, settle gently
     this.vortexOpen += (openTarget - this.vortexOpen) * Math.min(1, dt * rate);
-    this.vortexT += dt * (VORTEX.idle + (VORTEX.pull - VORTEX.idle) * this.vortexOpen);
+    this.vortexT += dt * (VORTEX.fallIdle + (VORTEX.fallPull - VORTEX.fallIdle) * this.vortexOpen);
+    const spinTarget = VORTEX.spinIdle + (VORTEX.spinMax - VORTEX.spinIdle) * this.vortexOpen;
+    const k = spinTarget > this.vortexSpin ? VORTEX.spinUp : VORTEX.spinDown;
+    this.vortexSpin += (spinTarget - this.vortexSpin) * Math.min(1, dt * k);
+    const edge = this.coreR + 4;
+    for (let i = 0; i < VORTEX.count; i++) {
+      const w = this.vortexSpin * (edge / this.moteRadius(i)) ** VORTEX.shear;
+      this.moteAngles[i] = (this.moteAngles[i] + w * dt) % (Math.PI * 2);
+    }
 
     if (this.state !== 'playing' && press === 'pointer' && this.hitMute()) {
       setMuted(!isMuted());
@@ -656,7 +701,9 @@ export class Growcore implements MiniGame {
       return;
     }
     if (this.state === 'over') {
-      // Short lockout so a panicked tap doesn't skip the results.
+      this.updateResultsFx();
+      // Short lockout so a panicked tap doesn't skip the results; after it, retry is instant
+      // even if the results animation is still playing.
       if (press && this.clock - this.overAt > 0.6) this.start();
       return;
     }
@@ -917,6 +964,8 @@ export class Growcore implements MiniGame {
     this.load = 0;
     this.gems = 0;
     this.recordRun();
+    this.resultsFx = { lastTick: 0, score: false, coins: false, msg: false };
+    this.uiParticles = [];
     noise(0.6, 0.5, 2000);
     tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
     vibrate([60, 40, 120]);
@@ -970,14 +1019,18 @@ export class Growcore implements MiniGame {
   }
 
   private updateFx(dt: number) {
-    for (const p of this.particles) {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.vx *= p.drag;
-      p.vy *= p.drag;
-      p.life -= dt;
+    for (const list of [this.particles, this.uiParticles]) {
+      for (const p of list) {
+        p.vy += (p.fall ?? 0) * dt;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.vx *= p.drag;
+        p.vy *= p.drag;
+        p.life -= dt;
+      }
     }
     this.particles = this.particles.filter((p) => p.life > 0);
+    this.uiParticles = this.uiParticles.filter((p) => p.life > 0);
     for (const p of this.popups) {
       p.y -= 40 * dt;
       p.life -= dt;
@@ -1089,17 +1142,29 @@ export class Growcore implements MiniGame {
   }
 
   /** Motes of light spiralling into the core (drawn under it, so they vanish as they arrive). */
+  /** How far through its fall mote `i` is: 0 = just appeared at the outer edge … 1 = swallowed. */
+  private moteFall(i: number) {
+    return (this.vortexT + i / VORTEX.count) % 1;
+  }
+
+  /** Distance of mote `i` from the core's center. */
+  private moteRadius(i: number) {
+    const reach = VORTEX.reachIdle + (VORTEX.reachOpen + this.growth * VORTEX.growReach - VORTEX.reachIdle) * this.vortexOpen;
+    return this.coreR + 2 + (1 - this.moteFall(i)) * reach;
+  }
+
   private drawVortex() {
     const { ctx } = this;
-    const open = this.vortexOpen;
-    const reach = VORTEX.reachIdle + (VORTEX.reachOpen + this.growth * VORTEX.growReach - VORTEX.reachIdle) * open;
+    // Motes wear the core's own tier colors (its fill, glow and shade), so they read as part of it.
+    const tier = TIERS[this.tierIndex];
+    const colors = [tier.top, tier.left, tier.top, tier.right];
     for (let i = 0; i < VORTEX.count; i++) {
-      const u = (this.vortexT + i / VORTEX.count) % 1; // 0 = outer edge … 1 = swallowed
-      const r = this.coreR + 2 + (1 - u) * reach;
-      // Golden-angle spread so motes never bunch up, curling tighter as they fall in.
-      const a = i * 2.39996 + u * VORTEX.curl + this.vortexT * 0.67;
+      const u = this.moteFall(i);
+      const r = this.moteRadius(i);
+      // Orbit angle comes from the physics; the curl term keeps a spiral as motes fall in.
+      const a = this.moteAngles[i] + u * VORTEX.curl;
       ctx.globalAlpha = Math.min(1, u * 4) * Math.min(1, (1 - u) * 5) * 0.9;
-      ctx.fillStyle = VORTEX.colors[i % VORTEX.colors.length];
+      ctx.fillStyle = colors[i % colors.length];
       const s = 1.2 + u * 1.8;
       ctx.fillRect(CX + Math.cos(a) * r - s / 2, CY + Math.sin(a) * r - s / 2, s, s);
     }
@@ -1599,21 +1664,32 @@ export class Growcore implements MiniGame {
    */
   private drawResults() {
     const { ctx } = this;
-    ctx.fillStyle = 'rgba(12,10,29,0.72)';
+    const t = this.clock - this.overAt;
+    // Each beat eases in on its own slot of the timeline (see RES); everything settles in ~1.3 s.
+    const beat = (start: number, dur: number) => clamp01((t - start) / dur);
+
+    ctx.fillStyle = `rgba(12,10,29,${0.72 * easeOutCubic(beat(0, RES.veil))})`;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
     ctx.textAlign = 'center';
 
     if (this.lostGems > 0) {
+      const a = beat(RES.lost, 0.2);
+      ctx.globalAlpha = a;
       ctx.fillStyle = C.danger;
       ctx.font = font(600, 15);
-      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'gema' : 'gemas'}`, CX, 104);
+      const drop = (1 - easeOutCubic(a)) * -12;
+      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'gema' : 'gemas'}`, CX, 104 + drop);
+      ctx.globalAlpha = 1;
     }
-    ctx.fillStyle = C.ink;
-    ctx.font = font(700, 72);
-    ctx.fillText(String(this.score), CX, 180);
-    ctx.fillStyle = C.gold;
-    ctx.font = font(700, 18);
-    ctx.fillText(`+${this.runCoins} ●`, CX, 214);
+
+    // Score counts up fast, then pops; coins follow the same way.
+    const shownScore = Math.round(this.score * easeOutCubic(beat(RES.countStart, RES.countEnd - RES.countStart)));
+    ctx.globalAlpha = beat(RES.lost, 0.15);
+    this.drawPopped(String(shownScore), font(700, 72), C.ink, 180, 26, pop(t - RES.countEnd));
+    const shownCoins = Math.round(this.runCoins * easeOutCubic(beat(RES.coinsStart, RES.coinsEnd - RES.coinsStart)));
+    ctx.globalAlpha = beat(RES.coinsStart, 0.12);
+    this.drawPopped(`+${shownCoins} ●`, font(700, 18), C.gold, 214, 6, pop(t - RES.coinsEnd));
+    ctx.globalAlpha = 1;
 
     const res = this.result;
     if (res) {
@@ -1623,10 +1699,25 @@ export class Growcore implements MiniGame {
       if (res.below) rows.push({ pos: res.pos + 1, run: res.below, me: false });
       // Keep "this run" in the middle slot even when there's nothing above it.
       let y = res.above ? 262 : 320;
-      for (const row of rows) {
+      for (const [j, row] of rows.entries()) {
         const w = row.me ? 280 : 244;
         const h = row.me ? 50 : 42;
-        const x = CX - w / 2;
+        // Rows slide in one after another, alternating sides; this run's row lands with a bounce.
+        const p = beat(RES.rows + j * RES.rowStep, RES.rowDur);
+        if (p <= 0) {
+          y += h + 16;
+          continue;
+        }
+        const slide = (1 - easeOutBack(p)) * (j % 2 ? 70 : -70);
+        const x = CX - w / 2 + slide;
+        ctx.save();
+        ctx.globalAlpha = p;
+        if (row.me) {
+          const s = 1 + pop(t - RES.rows - j * RES.rowStep - RES.rowDur) * 0.5;
+          ctx.translate(CX, y + h / 2);
+          ctx.scale(s, s);
+          ctx.translate(-CX, -(y + h / 2));
+        }
         this.drawPanel(x, y, w, h, row.me);
         const cy = y + h / 2 + 6;
         ctx.textAlign = 'left';
@@ -1648,44 +1739,136 @@ export class Growcore implements MiniGame {
           ctx.font = font(600, 13);
           ctx.fillText(`${row.run.m} ●`, x + w - 16, cy);
         }
+        ctx.restore();
         y += h + 16;
       }
 
-      ctx.textAlign = 'center';
-      ctx.font = font(600, 14);
-      if (res.total === 1) {
-        ctx.fillStyle = C.inkSoft;
-        ctx.fillText('Tu primera partida', CX, 460);
-      } else if (res.pos === 1) {
-        ctx.fillStyle = C.gold;
-        ctx.font = font(700, 16);
-        this.spaced(2);
-        ctx.fillText('¡NUEVO RÉCORD!', CX, 460);
-        this.spaced(0);
-        if (res.prevBest > 0) {
+      const m = beat(RES.msg, 0.25);
+      if (m > 0) {
+        ctx.textAlign = 'center';
+        ctx.globalAlpha = m;
+        const rise = (1 - easeOutCubic(m)) * 10;
+        ctx.font = font(600, 14);
+        if (res.total === 1) {
+          ctx.fillStyle = C.inkSoft;
+          ctx.fillText('Tu primera partida', CX, 460 + rise);
+        } else if (res.pos === 1) {
+          // Record: the line drops in like a stamp.
+          const s = 1 + (1 - easeOutBack(m)) * 0.9;
+          ctx.save();
+          ctx.translate(CX, 454);
+          ctx.scale(s, s);
+          ctx.fillStyle = C.gold;
+          ctx.font = font(700, 18);
+          this.spaced(2);
+          ctx.fillText('¡NUEVO RÉCORD!', 0, 6);
+          this.spaced(0);
+          ctx.restore();
+          if (res.prevBest > 0) {
+            ctx.fillStyle = C.inkSoft;
+            ctx.font = font(400, 13);
+            ctx.fillText(`Superaste tu récord por ${this.score - res.prevBest}`, CX, 488 + rise);
+          }
+        } else {
+          const gap = res.above!.p - this.score + 1;
+          ctx.fillStyle = C.gold;
+          ctx.fillText(`Te faltaron ${gap} ${gap === 1 ? 'punto' : 'puntos'} para el ${res.pos - 1}º`, CX, 460 + rise);
           ctx.fillStyle = C.inkSoft;
           ctx.font = font(400, 13);
-          ctx.fillText(`Superaste tu récord por ${this.score - res.prevBest}`, CX, 488);
+          ctx.fillText(`Tu récord: ${res.prevBest}`, CX, 488 + rise);
         }
-      } else {
-        const gap = res.above!.p - this.score + 1;
-        ctx.fillStyle = C.gold;
-        ctx.fillText(`Te faltaron ${gap} ${gap === 1 ? 'punto' : 'puntos'} para el ${res.pos - 1}º`, CX, 460);
-        ctx.fillStyle = C.inkSoft;
-        ctx.font = font(400, 13);
-        ctx.fillText(`Tu récord: ${res.prevBest}`, CX, 488);
+        ctx.globalAlpha = 1;
       }
     }
 
-    if (this.clock - this.overAt > 0.6) {
+    // Sparks and confetti from the results beats, above the veil.
+    for (const p of this.uiParticles) {
+      ctx.globalAlpha = p.life / p.max;
+      ctx.fillStyle = p.color;
+      ctx.fillRect(p.x - p.size / 2, p.y - p.size / 2, p.size, p.size);
+    }
+    ctx.globalAlpha = 1;
+
+    // Tapping already works after the lockout; the prompt shows once the screen has settled.
+    const r = beat(RES.retry, 0.3);
+    if (r > 0) {
       ctx.textAlign = 'center';
-      ctx.globalAlpha = 0.6 + Math.sin(this.clock * 4) * 0.4;
+      ctx.globalAlpha = r * (0.6 + Math.sin(this.clock * 4) * 0.4);
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 16);
       this.spaced(3);
       ctx.fillText('TOCÁ PARA REINTENTAR', CX, HEIGHT - 40);
       this.spaced(0);
       ctx.globalAlpha = 1;
+    }
+  }
+
+  /** Centered text scaled about its middle by 1 + `popAmount` (`lift` ≈ half its cap height). */
+  private drawPopped(text: string, f: string, color: string, baseline: number, lift: number, popAmount: number) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.translate(CX, baseline - lift);
+    ctx.scale(1 + popAmount, 1 + popAmount);
+    ctx.textAlign = 'center';
+    ctx.font = f;
+    ctx.fillStyle = color;
+    ctx.fillText(text, 0, lift);
+    ctx.restore();
+  }
+
+  /** Sound and sparks for the results beats, each fired once per results screen. */
+  private updateResultsFx() {
+    const t = this.clock - this.overAt;
+    const fx = this.resultsFx;
+    // Quick rising ticks while the score counts up.
+    if (t >= RES.countStart && t < RES.countEnd && this.clock - fx.lastTick > 0.055) {
+      fx.lastTick = this.clock;
+      const k = (t - RES.countStart) / (RES.countEnd - RES.countStart);
+      tone({ freq: 520 + k * 760, dur: 0.04, type: 'square', gain: 0.03 });
+    }
+    if (!fx.score && t >= RES.countEnd) {
+      fx.score = true;
+      this.uiBurst(CX, 155, ['#ffffff', C.gold, '#e3d7f2'], 22, 260);
+      [0, 4, 7].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.22, type: 'triangle', gain: 0.1, delay: i * 0.03 }));
+    }
+    if (!fx.coins && t >= RES.coinsEnd && this.runCoins > 0) {
+      fx.coins = true;
+      this.uiBurst(CX + 30, 207, [C.gold, '#fff2c4'], 10, 140);
+      tone({ freq: 1318, dur: 0.12, type: 'sine', gain: 0.1 });
+      tone({ freq: 1760, dur: 0.18, type: 'sine', gain: 0.08, delay: 0.06 });
+    }
+    if (!fx.msg && t >= RES.msg) {
+      fx.msg = true;
+      const res = this.result;
+      if (res && res.pos === 1 && res.total > 1) {
+        // New record: confetti rain plus a fanfare.
+        this.uiBurst(CX, 450, [C.gold, '#ff8fb1', '#8fd8c9', '#b9a8ff', '#ffffff'], 70, 420, 520);
+        [0, 2, 4, 7, 9].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.3, type: 'triangle', gain: 0.13, delay: i * 0.08 }));
+        vibrate([30, 40, 30]);
+      } else {
+        tone({ freq: 880, to: 660, dur: 0.18, type: 'triangle', gain: 0.07 });
+      }
+    }
+  }
+
+  /** Particle burst drawn above the results veil; `fall` adds gravity (confetti). */
+  private uiBurst(x: number, y: number, colors: string[], n: number, speed: number, fall = 0) {
+    for (let i = 0; i < n; i++) {
+      const a = fall ? -Math.PI / 2 + rand(-1.1, 1.1) : Math.random() * Math.PI * 2;
+      const s = rand(0.35, 1) * speed;
+      const max = rand(0.6, fall ? 1.6 : 0.9);
+      this.uiParticles.push({
+        x,
+        y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: max,
+        max,
+        size: rand(2.5, fall ? 6 : 4.5),
+        color: colors[i % colors.length],
+        drag: 0.96,
+        fall,
+      });
     }
   }
 

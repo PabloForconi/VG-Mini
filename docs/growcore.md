@@ -141,6 +141,10 @@ gancho de reintento:
 - Si es el mejor: "¡NUEVO RÉCORD!" + "Superaste tu récord por 93".
 - La primera vez: "Tu primera partida".
 
+Todo entra animado en ~1,3 s (velo, conteo rápido del puntaje con "pop" y chispas,
+monedas, filas que se deslizan, mensaje o sello de récord con confeti); se puede
+reintentar desde los 0,6 s aunque la animación no haya terminado. Tiempos en `RES`.
+
 En el dispositivo también se guardan el mute y si el jugador ya hizo estallar el
 núcleo alguna vez (para no repetirle el cartel de ayuda). Una tabla **global**
 compartida entre jugadores necesitaría un servidor: queda para más adelante.
