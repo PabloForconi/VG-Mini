@@ -93,7 +93,8 @@ edilicias.**
 - **Cielo** índigo profundo en degradé, dos nebulosas muy tenues (verde agua y magenta) y estrellas que titilan; unas pocas son destellos de 4 puntas.
 - **Núcleo**: círculo pastel con brillo, que cambia de tono con el tramo (crema → menta → verde agua → dorado → coral). El número va en tinta oscura.
 - **Gemas**: cristales facetados en dos tonos, **quietos** (sin giro), con brillo suave de su color.
-- **Minas**: cuerpo de pinchos **rojo** con **centro blanco** que late.
+- **Minas**: silueta de mina naval **facetada en rojos** (cuerpo tallado en 8 caras, 8 pinchos piramidales y un centro redondo), con sombreado plano y la luz siempre arriba a la izquierda aunque gire. Late apenas y tiene un halo rojo tenue. Se pre-dibuja como imagen en 16 pasos de giro (ver *Rendimiento*).
+- **Cobro**: las partículas del cobro salen disparadas lejos (en un cobro grande llegan a los bordes); las de cada captura quedan cerca del núcleo.
 - **Escudos**: burbujas blancas con brillo. El ícono pizza es de un solo color plano que cambia suave en ciclo (blanco → rosa → amarillo → verde → celeste → lila), sin divisiones: la misma burbuja transparente que el simple, pero teñida (relleno y borde) con el color que va cambiando.
 - **Texto**: Josefin Sans en tonos claros, títulos con espaciado amplio.
 
@@ -159,6 +160,15 @@ ver, más compras chicas. Nada de pay-to-win en el puntaje competitivo.
 Primero conviene un test de mercado barato: 3 creatividades de 15 s (la tensión de
 "aguantá... ¡soltá!" se lee muy bien en video) y medir CTR/CPI antes de invertir en meta.
 
+## Rendimiento
+
+Regla para todo lo visual: **nada de `shadowBlur`** (el desenfoque del canvas es lo
+más caro en celular). Los brillos se simulan con una forma translúcida detrás.
+
+- **Minas**: se dibujan una sola vez como imagen (sprite) a la resolución real de la pantalla, en 16 pasos de giro (como tienen 8 pinchos iguales, alcanza con cubrir 1/8 de vuelta). En cada cuadro solo se copia la imagen que corresponde. Medido: 4,6 veces más rápido que la mina anterior con desenfoque (22,7 ms contra 103,9 ms por cada 1.000 minas, en PC).
+- **Estrellas**: posiciones fijas generadas una vez; cada cuadro solo cambia su transparencia.
+- **Pendiente**: las gemas, el núcleo y los escudos todavía usan `shadowBlur` para su brillo. Pasarlos al mismo esquema de sprites (o a halos translúcidos) es la próxima optimización.
+
 ## Valores de ajuste
 
 Todo está arriba de [`src/games/iman.ts`](../src/games/iman.ts). Los más
@@ -182,3 +192,4 @@ el tiempo también apriete (por ejemplo, minas que apuntan más cerca del núcle
 - [ ] Vibración (`navigator.vibrate`) en casi-muertes y en la muerte.
 - [ ] Prototipo de la segunda oportunidad (sin SDK de anuncios, solo el flujo).
 - [ ] Probar variantes: minas que *repelen* al soltar, gemas que solo valen si llegan seguidas.
+- [ ] **Gemas falsas ("gema maldita")**: un cristal facetado como las gemas buenas pero violeta oscuro con filos rojos y aristas dentadas. Se parece lo suficiente a una gema como para tentar, y castiga al que atrae sin mirar. Boceto de la forma en la lámina de opciones de mina (opción 6).

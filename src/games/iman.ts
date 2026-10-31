@@ -74,7 +74,7 @@ const KINDS: Record<Kind, KindDef> = {
   cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#7fcabc', light: '#b2e6dc', dark: '#4f9e91', name: 'Gema celeste' },
   yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ecc56a', light: '#f8e1a0', dark: '#c4922f', name: 'Gema amarilla' },
   pink: { r: 11, mass: 3, value: 15, load: 3, color: '#e894a8', light: '#f6bfcb', dark: '#c4637c', name: 'Gema rosa' },
-  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#e8484f', light: '#ff6b70', dark: '#b8323a', name: 'Mina' },
+  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#f2565c', light: '#ff8a80', dark: '#a52834', name: 'Mina' },
   shield: {
     r: 11,
     mass: 3.2,
@@ -193,6 +193,92 @@ const STARS = (() => {
   }));
 })();
 
+/** Mine reds, lit to deep. Light comes from the upper left, like the gems. */
+const MINE_TONES = ['#ff8a80', '#f2565c', '#d23a43', '#a52834'];
+const MINE_LIGHT = (-3 * Math.PI) / 4;
+const MINE_SPIKES = 8;
+const MINE_PERIOD = (Math.PI * 2) / MINE_SPIKES; // the shape repeats every spike
+const MINE_FRAMES = 16; // baked rotation steps across one period
+const MINE_EXTENT = 20; // logical px from center to sprite edge, halo included
+
+/** 0 = facing the light … 3 = facing away. */
+const mineTone = (a: number) => {
+  const d = Math.cos(a - MINE_LIGHT);
+  return d > 0.5 ? 0 : d > -0.1 ? 1 : d > -0.7 ? 2 : 3;
+};
+
+/**
+ * Faceted naval mine, flat-shaded: a body cut into facets, pyramid spikes
+ * whose lit face is lighter, a round cap, and a faint halo instead of a blur.
+ * Shading follows the fixed light while the geometry turns by `rot`.
+ */
+function drawFacetedMine(g: CanvasRenderingContext2D, rot: number) {
+  const r = 11; // matches KINDS.mine.r
+  const TAU = Math.PI * 2;
+  const poly = (pts: number[][], color: string) => {
+    g.fillStyle = color;
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    g.fill();
+  };
+
+  g.fillStyle = 'rgba(242,86,92,0.14)';
+  g.beginPath();
+  g.arc(0, 0, r + 8, 0, TAU);
+  g.fill();
+
+  for (let i = 0; i < MINE_SPIKES; i++) {
+    const a = rot + MINE_PERIOD / 2 + i * MINE_PERIOD;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    const base = r - 1;
+    const half = 3.4;
+    const tip = [c * (base + 6), s * (base + 6)];
+    const left = [c * base - s * half, s * base + c * half];
+    const right = [c * base + s * half, s * base - c * half];
+    const mid = [c * (base - 1), s * (base - 1)];
+    const t = mineTone(a);
+    poly([mid, left, tip], MINE_TONES[Math.min(3, Math.max(mineTone(a + 0.6), t))]);
+    poly([mid, right, tip], MINE_TONES[Math.min(3, Math.max(mineTone(a - 0.6), t))]);
+  }
+
+  for (let i = 0; i < MINE_SPIKES; i++) {
+    const a0 = rot + i * MINE_PERIOD;
+    const a1 = a0 + MINE_PERIOD;
+    poly([[0, 0], [Math.cos(a0) * r, Math.sin(a0) * r], [Math.cos(a1) * r, Math.sin(a1) * r]], MINE_TONES[mineTone((a0 + a1) / 2)]);
+  }
+
+  // Round cap, split lit / mid along the light.
+  const cap = r * 0.42;
+  g.fillStyle = MINE_TONES[1];
+  g.beginPath();
+  g.arc(0, 0, cap, 0, TAU);
+  g.fill();
+  g.save();
+  g.beginPath();
+  g.arc(0, 0, cap, 0, TAU);
+  g.clip();
+  g.rotate(-Math.PI / 4);
+  g.fillStyle = MINE_TONES[0];
+  g.fillRect(-cap, -cap, cap * 2, cap);
+  g.restore();
+}
+
+/** Bakes MINE_FRAMES rotation steps of the mine at `px` device pixels per logical px. */
+function buildMineSprites(px: number): HTMLCanvasElement[] {
+  const size = Math.ceil(MINE_EXTENT * 2 * px);
+  return Array.from({ length: MINE_FRAMES }, (_, f) => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = size;
+    const g = cv.getContext('2d')!;
+    g.translate(size / 2, size / 2);
+    g.scale(px, px);
+    drawFacetedMine(g, (f / MINE_FRAMES) * MINE_PERIOD);
+    return cv;
+  });
+}
+
 /** [x, y, radius, inner color]: barely-there haze so the sky isn't flat. */
 const NEBULAE: [number, number, number, string][] = [
   [60, 150, 220, 'rgba(90,200,190,0.10)'],
@@ -230,7 +316,18 @@ interface Particle {
   max: number;
   size: number;
   color: string;
+  drag: number; // velocity kept per tick; closer to 1 = flies farther
 }
+
+interface BurstStyle {
+  drag: number;
+  life: [number, number]; // seconds, min..max
+  size: [number, number];
+}
+
+/** Catch sparks stay close to the core; cash-outs fling far so they feel like a payout. */
+const SPARKS: BurstStyle = { drag: 0.92, life: [0.3, 0.7], size: [2, 4] };
+const PAYOUT: BurstStyle = { drag: 0.965, life: [0.6, 1.1], size: [2.5, 4.5] };
 
 interface Popup {
   x: number;
@@ -255,6 +352,8 @@ export class Iman implements MiniGame {
   private spawnTimer = 0;
   private phase = 0;
   private bag: Kind[] = [];
+  private mineSprites: HTMLCanvasElement[] = [];
+  private mineSpritePx = 0;
   private mineStreak = 0; // consecutive mines dealt so far
   private bannerAt = -99; // clock time the current phase banner appeared
   private shieldTimer = 0; // countdown to the next random shield drop
@@ -612,8 +711,8 @@ export class Iman implements MiniGame {
     const tier = TIERS[ti];
     const pts = this.bank * tier.mult;
     this.score += pts;
-    this.burst(CX, CY, tier.left, 12 + this.load * 2, 160 + this.load * 6);
-    this.burst(CX, CY, '#ffffff', 10, 120);
+    this.burst(CX, CY, tier.left, 12 + this.load * 2, 300 + this.load * 10, PAYOUT);
+    this.burst(CX, CY, '#ffffff', 10, 200, PAYOUT);
     this.popup(CX, CY - this.coreR - 24, `+${pts}`, tier.ink, 20 + ti * 4);
     this.corePop = 1;
     this.shake = 0.04 * ti;
@@ -653,12 +752,22 @@ export class Iman implements MiniGame {
     return Math.floor(this.score / T.pointsPerCoin);
   }
 
-  private burst(x: number, y: number, color: string, n: number, speed: number) {
+  private burst(x: number, y: number, color: string, n: number, speed: number, style = SPARKS) {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = rand(0.3, 1) * speed;
-      const max = rand(0.3, 0.7);
-      this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: max, max, size: rand(2, 4), color });
+      const max = rand(...style.life);
+      this.particles.push({
+        x,
+        y,
+        vx: Math.cos(a) * s,
+        vy: Math.sin(a) * s,
+        life: max,
+        max,
+        size: rand(...style.size),
+        color,
+        drag: style.drag,
+      });
     }
   }
 
@@ -670,8 +779,8 @@ export class Iman implements MiniGame {
     for (const p of this.particles) {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vx *= 0.92;
-      p.vy *= 0.92;
+      p.vx *= p.drag;
+      p.vy *= p.drag;
       p.life -= dt;
     }
     this.particles = this.particles.filter((p) => p.life > 0);
@@ -870,37 +979,18 @@ export class Iman implements MiniGame {
     ctx.restore();
   }
 
-  /** Mines: red spiked body with a white heart that throbs. */
+  /** Mines: a pre-rendered faceted naval mine, picked by rotation step and copied with a slight pulse. */
   private drawMine(x: number, y: number, spin: number) {
-    const { ctx } = this;
-    const k = KINDS.mine;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(spin);
-    const spikes = 8;
-    const pulse = 1 + Math.sin(this.clock * 8 + spin) * 0.08;
-    ctx.beginPath();
-    for (let i = 0; i < spikes * 2; i++) {
-      const rr = (i % 2 === 0 ? k.r + 5 : k.r - 1) * pulse;
-      const a = (i / (spikes * 2)) * Math.PI * 2;
-      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    // Sprites are baked at the canvas's own pixel density, rebuilt only if that changes (resize).
+    const px = this.ctx.canvas.width / WIDTH;
+    if (px !== this.mineSpritePx) {
+      this.mineSprites = buildMineSprites(px);
+      this.mineSpritePx = px;
     }
-    ctx.closePath();
-    ctx.fillStyle = k.color;
-    ctx.shadowColor = k.color;
-    ctx.shadowBlur = 12;
-    ctx.fill();
-    ctx.shadowBlur = 0;
-    // Flat-shade the lower-right half.
-    ctx.fillStyle = k.dark;
-    ctx.beginPath();
-    ctx.arc(0, 0, k.r - 1, -Math.PI / 4, (Math.PI * 3) / 4);
-    ctx.fill();
-    ctx.fillStyle = C.white;
-    ctx.beginPath();
-    ctx.arc(0, 0, k.r * 0.48 * pulse, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    const t = ((spin % MINE_PERIOD) + MINE_PERIOD) % MINE_PERIOD;
+    const sprite = this.mineSprites[Math.floor((t / MINE_PERIOD) * MINE_FRAMES) % MINE_FRAMES];
+    const e = MINE_EXTENT * (1 + Math.sin(this.clock * 8 + spin) * 0.05);
+    this.ctx.drawImage(sprite, x - e, y - e, e * 2, e * 2);
   }
 
   /** Active shield: a full bubble, or pizza slices with gaps where mines broke through. */
