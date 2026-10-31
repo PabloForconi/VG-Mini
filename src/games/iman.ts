@@ -625,7 +625,8 @@ export class Iman implements MiniGame {
     const progress = next ? (this.load - tier.load) / (next.load - tier.load) : 1;
     if (this.load > 0) {
       ctx.strokeStyle = next ? next.color : tier.color;
-      ctx.globalAlpha = next ? 0.9 : 0.6 + Math.sin(this.clock * 10) * 0.4;
+      // Kept translucent: a hint, not something competing with the core.
+      ctx.globalAlpha = next ? 0.45 : 0.4 + Math.sin(this.clock * 10) * 0.15;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(CX, CY, r + 6, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
