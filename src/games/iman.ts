@@ -247,7 +247,7 @@ export class Iman implements MiniGame {
     if (!this.slices[i]) return false; // gap: the mine goes through
 
     this.slices[i] = false;
-    const color = this.shieldKind === 'shield' ? '#ffffff' : this.sliceColor(i);
+    const color = '#ffffff';
     this.burst(mine.x, mine.y, '#ff3b3b', 18, 200);
     this.burst(mine.x, mine.y, color, 14, 160);
     this.popup(mine.x, mine.y - 14, '¡BLOQUEADA!', color);
@@ -786,7 +786,8 @@ export class Iman implements MiniGame {
       if (!this.slices[i]) continue;
       const a0 = (i / n) * Math.PI * 2 + gap;
       const a1 = ((i + 1) / n) * Math.PI * 2 - gap;
-      const color = this.shieldKind === 'shield' ? '#ffffff' : this.sliceColor(i);
+      // Both bubbles are white on the core; only the pizza pickup cycles colors.
+      const color = '#ffffff';
       ctx.globalAlpha = 0.12;
       ctx.fillStyle = color;
       ctx.beginPath();

@@ -62,7 +62,7 @@ aparece una burbuja alrededor del núcleo que crece con él.
 | Escudo | Ícono | Qué hace |
 | --- | --- | --- |
 | Escudo | redondo blanco | La primera mina que toca la burbuja explota sin hacerte nada; la burbuja se rompe. |
-| Escudo pizza | redondo, 6 porciones que cambian de color | La burbuja tiene 6 porciones. Una mina rompe solo la porción por donde entra; las otras siguen protegiendo. Una mina que entra por un hueco te toca. |
+| Escudo pizza | redondo, 6 porciones que cambian de color | La burbuja (blanca, como la del simple) tiene 6 porciones. Una mina rompe solo la porción por donde entra; las otras siguen protegiendo. Una mina que entra por un hueco te toca. |
 
 - El primero de cada tipo llega con su cartel (simple a los 55 s, pizza a los 80 s). Después caen al azar cada 10–18 s.
 - Agarrar un escudo teniendo otro lo reemplaza por el nuevo, completo.
