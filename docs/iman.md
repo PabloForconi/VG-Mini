@@ -92,7 +92,7 @@ edilicias.**
 
 - **Cielo** índigo profundo en degradé, dos nebulosas muy tenues (verde agua y magenta) y estrellas que titilan; unas pocas son destellos de 4 puntas.
 - **Núcleo**: círculo pastel con brillo, que cambia de tono con el tramo (crema → menta → verde agua → dorado → coral). El número va en tinta oscura.
-- **Gemas**: cristales facetados en dos tonos, **quietos** (sin giro), con brillo suave de su color.
+- **Gemas**: cristales facetados en dos tonos, sin giro, con brillo suave de su color. Mientras el imán las arrastra **se inclinan hacia donde van** (más rápido = más inclinación: celeste hasta 20°, amarilla ~13°, rosa ~6°) y al soltar vuelven a quedar derechas (`tiltMax`, `tiltSpeed`).
 - **Minas**: silueta de mina naval **facetada en rojos** (cuerpo tallado en 8 caras, 8 pinchos piramidales y un centro redondo), con sombreado plano y la luz siempre arriba a la izquierda aunque gire. Late apenas y tiene un halo rojo tenue. Se pre-dibuja como imagen en 16 pasos de giro (ver *Rendimiento*).
 - **Cobro**: las partículas del cobro salen disparadas lejos (en un cobro grande llegan a los bordes); las de cada captura quedan cerca del núcleo.
 - **Escudos**: burbujas blancas con brillo. El ícono pizza es de un solo color plano que cambia suave en ciclo (blanco → rosa → amarillo → verde → celeste → lila), sin divisiones: la misma burbuja transparente que el simple, pero teñida (relleno y borde) con el color que va cambiando.

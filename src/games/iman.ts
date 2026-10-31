@@ -34,6 +34,8 @@ const T = {
   nearMissGap: 22,
   nearMissPoints: 5,
   pointsPerCoin: 5,
+  tiltMax: 0.35, // max gem lean while pulled (~20°)
+  tiltSpeed: 450, // sideways pull speed (px/s) that reaches tiltMax
 };
 
 type ShieldKind = 'shield' | 'pizza';
@@ -304,6 +306,7 @@ interface Body {
   age: number;
   spin: number;
   danger: boolean; // mine currently inside the near-miss ring
+  tilt: number; // gems lean toward where the magnet drags them (radians)
   dead: boolean;
 }
 
@@ -536,6 +539,9 @@ export class Iman implements MiniGame {
       b.y += (b.dy + b.vy) * dt;
       b.age += dt;
       b.spin += dt * (b.kind === 'mine' ? 1.2 : 3);
+      // Lean into the magnet's sideways pull (drift alone keeps them upright), easing in and out.
+      const lean = Math.max(-T.tiltMax, Math.min(T.tiltMax, b.vx / T.tiltSpeed));
+      b.tilt += (lean - b.tilt) * Math.min(1, dt * 10);
 
       ox = CX - b.x;
       oy = CY - b.y;
@@ -659,6 +665,7 @@ export class Iman implements MiniGame {
       age: 0,
       spin: Math.random() * Math.PI * 2,
       danger: false,
+      tilt: 0,
       dead: false,
     });
   }
@@ -923,7 +930,7 @@ export class Iman implements MiniGame {
   }
 
   private drawBody(b: Body) {
-    this.drawItem(b.kind, b.x, b.y, b.spin);
+    this.drawItem(b.kind, b.x, b.y, b.spin, b.tilt);
   }
 
   /** Round pickups: white bubble, or a pizza whose pastel slices cycle colors. */
@@ -954,7 +961,8 @@ export class Iman implements MiniGame {
     ctx.fill();
   }
 
-  private drawItem(kind: Kind, x: number, y: number, spin: number) {
+  /** `spin` turns mines and shields; gems ignore it and only lean by `tilt` (radians). */
+  private drawItem(kind: Kind, x: number, y: number, spin: number, tilt = 0) {
     if (isShield(kind)) return this.drawShieldIcon(kind, x, y, spin);
     if (kind === 'mine') return this.drawMine(x, y, spin);
     const { ctx } = this;
@@ -962,6 +970,7 @@ export class Iman implements MiniGame {
     const r = k.r;
     ctx.save();
     ctx.translate(x, y);
+    ctx.rotate(tilt);
     const tri = (pts: number[][], color: string) => {
       ctx.fillStyle = color;
       ctx.beginPath();
