@@ -53,8 +53,14 @@ Un anillo alrededor del núcleo muestra cuánto falta para el próximo tramo.
 ## Bucle
 
 - **Núcleo (30 s):** mantener / soltar → cargar → cobrar o morir.
-- **Partida:** puntaje → monedas (1 cada 5 puntos) → récord.
-- **Meta (días):** monedas → mejoras y skins → desafíos diarios → volver mañana.
+- **Partida:** puntaje → monedas (1 cada 5 puntos).
+- **Meta (días, pendiente):** monedas → mejoras y skins → desafíos diarios → volver mañana.
+
+**Estado actual del prototipo:** el puntaje y las monedas empiezan en 0 en cada
+partida y no se guardan entre partidas; tampoco hay récord. Se vuelven a guardar
+cuando tengan un objetivo (algo que comprar con las monedas, un récord o una tabla
+que superar). Lo único que se guarda en el dispositivo es el mute y si el jugador
+ya cobró alguna vez (para no repetirle el cartel de ayuda).
 
 ## Modelo de negocio (hybrid-casual)
 

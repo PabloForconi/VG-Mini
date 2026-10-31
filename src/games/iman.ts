@@ -121,11 +121,8 @@ export class Iman implements MiniGame {
   private load = 0; // what the core is carrying; drives size and tier
   private coreR = T.coreRadius; // drawn/collision radius, eases toward target
   private lost = 0; // what the last death threw away
-  private best = loadNumber('iman.best');
-  private coins = loadNumber('coins');
+  // No best score or coin wallet across runs until they have something to buy/beat.
   private cashedOnce = loadNumber('iman.cashedOnce') === 1;
-  private runCoins = 0;
-  private newBest = false;
   private holding = false;
   private holdBlocked = false; // a press that cashed out shouldn't also pull
   private overAt = 0;
@@ -277,7 +274,6 @@ export class Iman implements MiniGame {
     this.bank = 0;
     this.load = 0;
     this.lost = 0;
-    this.newBest = false;
     tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
   }
 
@@ -380,16 +376,11 @@ export class Iman implements MiniGame {
     noise(0.6, 0.5, 2000);
     tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
     vibrate([60, 40, 120]);
+  }
 
-    this.runCoins = Math.floor(this.score / T.pointsPerCoin);
-    this.coins += this.runCoins;
-    saveNumber('coins', this.coins);
-    if (this.score > this.best) {
-      this.best = this.score;
-      this.newBest = true;
-      saveNumber('iman.best', this.best);
-      [0, 2, 4, 5].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.25, type: 'triangle', gain: 0.15, delay: 0.5 + i * 0.1 }));
-    }
+  /** Coins earned this run, derived from score (not saved anywhere yet). */
+  private get runCoins() {
+    return Math.floor(this.score / T.pointsPerCoin);
   }
 
   private burst(x: number, y: number, color: string, n: number, speed: number) {
@@ -617,10 +608,12 @@ export class Iman implements MiniGame {
 
   private drawHud() {
     const { ctx } = this;
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 14px system-ui, sans-serif';
-    ctx.fillStyle = '#ffd23f';
-    ctx.fillText(`● ${this.coins}`, WIDTH - 14, 26);
+    if (this.state === 'playing') {
+      ctx.textAlign = 'right';
+      ctx.font = 'bold 14px system-ui, sans-serif';
+      ctx.fillStyle = '#ffd23f';
+      ctx.fillText(`● ${this.runCoins}`, WIDTH - 14, 26);
+    }
     ctx.textAlign = 'center';
 
     if (this.state !== 'playing') this.drawMuteIcon();
@@ -639,11 +632,6 @@ export class Iman implements MiniGame {
       ctx.fillStyle = `rgba(255,255,255,${0.6 + Math.sin(this.clock * 4) * 0.4})`;
       ctx.font = 'bold 18px system-ui, sans-serif';
       ctx.fillText('TOCÁ PARA EMPEZAR', CX, HEIGHT - 120);
-      if (this.best > 0) {
-        ctx.fillStyle = '#8f88c9';
-        ctx.font = '14px system-ui, sans-serif';
-        ctx.fillText(`Récord: ${this.best}`, CX, HEIGHT - 90);
-      }
       return;
     }
 
@@ -657,17 +645,14 @@ export class Iman implements MiniGame {
       ctx.fillStyle = '#ffffff';
       ctx.font = '900 64px system-ui, sans-serif';
       ctx.fillText(String(this.score), CX, 250);
-      ctx.font = 'bold 16px system-ui, sans-serif';
-      ctx.fillStyle = this.newBest ? '#ffd23f' : '#8f88c9';
-      ctx.fillText(this.newBest ? '¡NUEVO RÉCORD!' : `Récord: ${this.best}`, CX, 284);
       if (this.lost > 0) {
         ctx.fillStyle = '#ff8a8a';
         ctx.font = 'bold 15px system-ui, sans-serif';
-        ctx.fillText(`Perdiste ${this.lost} sin cobrar`, CX, 312);
+        ctx.fillText(`Perdiste ${this.lost} sin cobrar`, CX, 284);
       }
       ctx.fillStyle = '#ffd23f';
       ctx.font = 'bold 20px system-ui, sans-serif';
-      ctx.fillText(`+${this.runCoins} ●`, CX, 356);
+      ctx.fillText(`+${this.runCoins} ●`, CX, 330);
       if (this.clock - this.overAt > 0.6) {
         ctx.fillStyle = `rgba(255,255,255,${0.6 + Math.sin(this.clock * 4) * 0.4})`;
         ctx.font = 'bold 18px system-ui, sans-serif';
