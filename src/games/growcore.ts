@@ -1,7 +1,7 @@
 import { Drone, isMuted, noise, setMuted, tone, vibrate } from '../engine/audio';
 import { isHolding, pointer, takePress } from '../engine/input';
 import { loadJSON, loadNumber, saveJSON, saveNumber } from '../engine/storage';
-import { HEIGHT, WIDTH, type MiniGame } from './MiniGame';
+import { HEIGHT, VIEW, WIDTH, toGame, type MiniGame } from './MiniGame';
 
 /**
  * GROWCORE — hold to pull everything toward the core.
@@ -15,14 +15,11 @@ const TITLE = 'GROWCORE';
 
 /** Start-screen copy. Lines wrap automatically to the screen width. */
 const START_RULES: { text: string; warn?: boolean }[] = [
-  { text: 'Mantené presionado para atraer.' },
-  { text: 'Tocá el núcleo para liberar la carga y sumar puntos.' },
-  { text: '¡Cuidado con las bombas! Si las atraés, perdés todo lo acumulado.', warn: true },
+  { text: 'Mantené para atraer.' },
+  { text: 'Tocá el núcleo para liberar la carga.' },
+  { text: '¡Cuidado con las bombas!', warn: true },
 ];
-const START_TIPS = [
-  'Cuanto más pesa, más tarda en llegar... ¡pero más puntos vale!',
-  '¡Cuanta más carga acumules, mayor será el multiplicador!',
-];
+const START_TIPS = ['Más pesada, más puntos.', 'Más carga, más multiplicador.'];
 const CX = WIDTH / 2;
 const CY = HEIGHT / 2;
 
@@ -199,13 +196,21 @@ const TIERS = [
 const STARS = (() => {
   let s = 20261031;
   const rnd = () => ((s = Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
-  return Array.from({ length: 110 }, () => ({
-    x: rnd() * WIDTH,
-    y: rnd() * HEIGHT,
+  const star = (x: number, y: number) => ({
+    x,
+    y,
     size: rnd() < 0.05 ? 2.5 + rnd() * 1.2 : 0.6 + rnd() * 1.2,
     phase: rnd() * Math.PI * 2,
     speed: 0.6 + rnd() * 1.8,
-  }));
+  });
+  const stars = Array.from({ length: 110 }, () => star(rnd() * WIDTH, rnd() * HEIGHT));
+  // Same density in the margins that taller/wider screens reveal around the play area.
+  for (let i = 0; i < 240; i++) {
+    const x = -120 + rnd() * (WIDTH + 240);
+    const y = -320 + rnd() * (HEIGHT + 640);
+    if (x < 0 || x > WIDTH || y < 0 || y > HEIGHT) stars.push(star(x, y));
+  }
+  return stars;
 })();
 
 /** Mine reds, lit to deep. Light comes from the upper left, like the gems. */
@@ -352,36 +357,42 @@ const VORTEX = {
   fallIdle: 0.12, // fall cycles per second when not touching
   fallPull: 1.4, // … at a full hold
   openTime: 2.5, // seconds of holding to open all the way (same as the hum's peak)
-  reachIdle: 4, // px from the core edge where motes appear when closed (hugging it)
+  reachIdle: 10, // px from the core edge where motes appear when closed: just past the progress ring (+6)
   reachOpen: 64, // … when fully open
   growReach: 24, // extra open reach at max core size
   curl: 2.2, // extra radians a mote turns as it falls in (keeps a spiral shape)
   // Spin has inertia: it spins up with effort and coasts down slowly, like a top.
   spinIdle: 0.6, // rad/s at the core's edge when idle
   spinMax: 6.5, // … at a full hold
-  spinUp: 1.8, // how quickly spin catches up when speeding up (1/s)
+  spinUp: 3.6, // how quickly spin catches up when speeding up (1/s)
   spinDown: 0.6, // … when slowing down: lower = longer coast
   // Inner motes orbit faster than outer ones (like water down a drain): ω ∝ (edge / r)^shear.
   shear: 1.3,
 };
 
 const SKY_MARGIN = 20; // baked past the screen edges so screen shake never shows a seam
+const SPAWN_REACH = 90; // farthest outside the play area that gems and bombs enter from
 const GLOW_R = 128; // baked glow radius; a soft gradient scales up cleanly to the field size
 
-/** Sky gradient + nebulae, painted once at `px` device pixels per logical px. */
-function buildSky(px: number): HTMLCanvasElement {
+/**
+ * Sky gradient + nebulae for the whole visible screen (VIEW, plus a margin for screen shake),
+ * painted once and rebuilt only when the window or pixel density changes.
+ */
+function buildSky(): HTMLCanvasElement {
+  const { x0, y0, w, h, px } = VIEW;
   const cv = document.createElement('canvas');
-  cv.width = Math.ceil((WIDTH + SKY_MARGIN * 2) * px);
-  cv.height = Math.ceil((HEIGHT + SKY_MARGIN * 2) * px);
+  cv.width = Math.ceil((w + SKY_MARGIN * 2) * px);
+  cv.height = Math.ceil((h + SKY_MARGIN * 2) * px);
   const g = cv.getContext('2d')!;
   g.scale(px, px);
-  g.translate(SKY_MARGIN, SKY_MARGIN);
-  const sky = g.createLinearGradient(0, 0, 0, HEIGHT);
+  g.translate(SKY_MARGIN - x0, SKY_MARGIN - y0);
+  // The gradient spans the full screen height, so tall phones get the whole dusk-to-night fade.
+  const sky = g.createLinearGradient(0, y0, 0, y0 + h);
   sky.addColorStop(0, '#0c0a1d');
   sky.addColorStop(0.6, '#171233');
   sky.addColorStop(1, '#241a3d');
   g.fillStyle = sky;
-  g.fillRect(-SKY_MARGIN, -SKY_MARGIN, WIDTH + SKY_MARGIN * 2, HEIGHT + SKY_MARGIN * 2);
+  g.fillRect(x0 - SKY_MARGIN, y0 - SKY_MARGIN, w + SKY_MARGIN * 2, h + SKY_MARGIN * 2);
   for (const [x, y, rad, color] of NEBULAE) {
     const n = g.createRadialGradient(x, y, 0, x, y, rad);
     n.addColorStop(0, color);
@@ -471,6 +482,21 @@ const RES = {
   retry: 1.25, // retry prompt fades in
 };
 
+/** Start screen timeline, in seconds after the font is ready. Same feel as RES, ~1.6 s total. */
+const INTRO = {
+  letters: 0.05, // title letters start dropping in …
+  letterStep: 0.05, // … one after another …
+  letterDur: 0.35, // … each landing with a small overshoot; the title pops when the last lands
+  rules: 0.55, // rule lines rise in
+  ruleStep: 0.1,
+  ruleDur: 0.3,
+  legend: 0.85, // legend rows slide in (header fades just before)
+  rowStep: 0.09,
+  rowDur: 0.28,
+  tips: 1.35,
+  prompt: 1.5, // "TOCÁ PARA EMPEZAR" fades in, then pulses
+};
+
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
 /** Overshoots a little before settling: things "land". */
@@ -531,7 +557,7 @@ export class Growcore implements MiniGame {
   private bag: Kind[] = [];
   private sky: HTMLCanvasElement | null = null;
   private glow: HTMLCanvasElement | null = null;
-  private skyPx = 0;
+  private skyKey = ''; // px and size the baked sky was built for
   private gemSprites: Partial<Record<Kind, HTMLCanvasElement>> = {};
   private gemSpritePx = 0;
   private coreGlows = new Map<string, HTMLCanvasElement>();
@@ -556,6 +582,7 @@ export class Growcore implements MiniGame {
   private holding = false;
   private holdBlocked = false; // a press that cashed out shouldn't also pull
   private overAt = 0;
+  private introAt = Infinity; // clock time the start-screen animation began (set once fonts load)
   private shake = 0;
   private corePop = 0;
   private holdTime = 0;
@@ -567,8 +594,14 @@ export class Growcore implements MiniGame {
   private hum = new Drone();
 
   constructor(private ctx: CanvasRenderingContext2D) {
-    // Canvas only uses a web font once it has loaded; ask for every weight up front.
-    for (const w of [400, 600, 700]) void document.fonts?.load(font(w, 16));
+    // Canvas only uses a web font once it has loaded; ask for every weight up front, and hold
+    // the intro until then (or 1 s at most) so it never plays in a fallback font and then jumps.
+    const fonts = Promise.all([400, 600, 700].map((w) => document.fonts?.load(font(w, 16))));
+    const begin = () => {
+      if (this.introAt === Infinity) this.introAt = this.clock;
+    };
+    void fonts.then(begin, begin);
+    setTimeout(begin, 1000);
     if (loadNumber(BOARD_VERSION_KEY) < BOARD_VERSION) {
       saveJSON(RUNS_KEY, []);
       saveNumber(BOARD_VERSION_KEY, BOARD_VERSION);
@@ -639,11 +672,7 @@ export class Growcore implements MiniGame {
 
   /** Last pointer press, in game coordinates. */
   private pointerInGame() {
-    const r = this.ctx.canvas.getBoundingClientRect();
-    return {
-      x: ((pointer.x - r.left) / r.width) * WIDTH,
-      y: ((pointer.y - r.top) / r.height) * HEIGHT,
-    };
+    return toGame(pointer.x, pointer.y);
   }
 
   private hitMute() {
@@ -683,7 +712,8 @@ export class Growcore implements MiniGame {
     const rate = openTarget > this.vortexOpen ? 6 : 2.5; // follow the hold closely, settle gently
     this.vortexOpen += (openTarget - this.vortexOpen) * Math.min(1, dt * rate);
     this.vortexT += dt * (VORTEX.fallIdle + (VORTEX.fallPull - VORTEX.fallIdle) * this.vortexOpen);
-    const spinTarget = VORTEX.spinIdle + (VORTEX.spinMax - VORTEX.spinIdle) * this.vortexOpen;
+    // sqrt: most of the spin-up lands early in the hold, so it answers the finger right away.
+    const spinTarget = VORTEX.spinIdle + (VORTEX.spinMax - VORTEX.spinIdle) * Math.sqrt(this.vortexOpen);
     const k = spinTarget > this.vortexSpin ? VORTEX.spinUp : VORTEX.spinDown;
     this.vortexSpin += (spinTarget - this.vortexSpin) * Math.min(1, dt * k);
     const edge = this.coreR + 4;
@@ -780,7 +810,8 @@ export class Growcore implements MiniGame {
         b.danger = inRing;
       }
 
-      const out = b.x < -40 || b.x > WIDTH + 40 || b.y < -40 || b.y > HEIGHT + 40;
+      const v = VIEW;
+      const out = b.x < v.x0 - 40 || b.x > v.x0 + v.w + 40 || b.y < v.y0 - 40 || b.y > v.y0 + v.h + 40;
       if (out && b.age > 2) b.dead = true;
     }
     this.bodies = this.bodies.filter((b) => !b.dead);
@@ -852,10 +883,16 @@ export class Growcore implements MiniGame {
   }
 
   private spawn(kind: Kind) {
-    // Enter from a random edge, just off screen.
+    // Enter from a random edge, just off the visible screen; on very wide/tall screens no
+    // farther than SPAWN_REACH from the play area (they fade in, so that never pops).
+    const v = VIEW;
+    const left = Math.max(v.x0, -SPAWN_REACH) - 20;
+    const right = Math.min(v.x0 + v.w, WIDTH + SPAWN_REACH) + 20;
+    const top = Math.max(v.y0, -SPAWN_REACH) - 20;
+    const bottom = Math.min(v.y0 + v.h, HEIGHT + SPAWN_REACH) + 20;
     const side = Math.floor(Math.random() * 4);
-    const x = side === 0 ? -20 : side === 1 ? WIDTH + 20 : rand(0, WIDTH);
-    const y = side === 2 ? -20 : side === 3 ? HEIGHT + 20 : rand(0, HEIGHT);
+    const x = side === 0 ? left : side === 1 ? right : rand(0, WIDTH);
+    const y = side === 2 ? top : side === 3 ? bottom : rand(0, HEIGHT);
 
     // Aim past the core so nothing reaches it without the player's input.
     const toCore = Math.atan2(CY - y, CX - x);
@@ -1101,13 +1138,14 @@ export class Growcore implements MiniGame {
     const { ctx } = this;
     // Full-screen gradients are the priciest thing to paint every frame, so the sky
     // and the magnet glow are baked once per pixel density and just copied.
-    const px = ctx.canvas.width / WIDTH;
-    if (px !== this.skyPx) {
-      this.sky = buildSky(px);
-      this.glow = buildGlow();
-      this.skyPx = px;
+    const v = VIEW;
+    const key = `${v.px}|${v.w}|${v.h}`;
+    if (key !== this.skyKey) {
+      this.sky = buildSky();
+      this.glow ??= buildGlow();
+      this.skyKey = key;
     }
-    ctx.drawImage(this.sky!, -SKY_MARGIN, -SKY_MARGIN, WIDTH + SKY_MARGIN * 2, HEIGHT + SKY_MARGIN * 2);
+    ctx.drawImage(this.sky!, v.x0 - SKY_MARGIN, v.y0 - SKY_MARGIN, v.w + SKY_MARGIN * 2, v.h + SKY_MARGIN * 2);
 
     // Holding the magnet lifts the light around the core a little.
     if (active) {
@@ -1116,7 +1154,10 @@ export class Growcore implements MiniGame {
     }
 
     ctx.fillStyle = '#ffffff';
+    const x1 = v.x0 + v.w;
+    const y1 = v.y0 + v.h;
     for (const s of STARS) {
+      if (s.x < v.x0 - 8 || s.x > x1 + 8 || s.y < v.y0 - 8 || s.y > y1 + 8) continue; // off-screen
       ctx.globalAlpha = 0.25 + 0.5 * (0.5 + 0.5 * Math.sin(this.clock * s.speed + s.phase));
       if (s.size < 2.5) {
         ctx.fillRect(s.x, s.y, s.size, s.size);
@@ -1195,7 +1236,10 @@ export class Growcore implements MiniGame {
   }
 
   private drawBody(b: Body) {
+    // Quick fade-in, so items entering inside a wide screen's visible margin don't pop.
+    if (b.age < 0.25) this.ctx.globalAlpha = b.age / 0.25;
     this.drawItem(b.kind, b.x, b.y, b.spin, b.tilt);
+    this.ctx.globalAlpha = 1;
   }
 
   /** Round pickups: white bubble, or a pizza bubble tinted with a cycling pastel color. */
@@ -1240,7 +1284,7 @@ export class Growcore implements MiniGame {
     if (kind === 'mine') return this.drawMine(x, y, spin);
     // Gems: baked once per kind (glow included), then just copied, leaning by `tilt`.
     const { ctx } = this;
-    const px = ctx.canvas.width / WIDTH;
+    const px = VIEW.px;
     if (px !== this.gemSpritePx) {
       this.gemSprites = {};
       this.gemSpritePx = px;
@@ -1261,7 +1305,7 @@ export class Growcore implements MiniGame {
   /** Mines: a pre-rendered faceted naval mine, picked by rotation step and copied with a slight pulse. */
   private drawMine(x: number, y: number, spin: number) {
     // Sprites are baked at the canvas's own pixel density, rebuilt only if that changes (resize).
-    const px = this.ctx.canvas.width / WIDTH;
+    const px = VIEW.px;
     if (px !== this.mineSpritePx) {
       this.mineSprites = buildMineSprites(px);
       this.mineSpritePx = px;
@@ -1436,96 +1480,158 @@ export class Growcore implements MiniGame {
     return lines;
   }
 
-  /** Start screen: rules plus an arcade-style legend that reveals row by row. */
+  /**
+   * Start screen, animated in the same language as the results screen (see INTRO): title
+   * letters drop in and the title pops, rules rise in, legend rows slide in from alternating
+   * sides and pop their points, then the tips and the pulsing prompt. Tapping starts at any time.
+   */
   private drawTitle() {
     const { ctx } = this;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = C.ink;
+    const t = this.clock - this.introAt;
+    const beat = (start: number, dur: number) => clamp01((t - start) / dur);
+
+    // Title: letters drop in one by one with a small overshoot, then the whole word pops.
     // Shrink the wide-tracked title until it fits, whatever the font metrics on the device.
     let size = 50;
     while (size > 30 && this.measure(TITLE, font(700, size), size * 0.14) > WIDTH - 40) size -= 2;
-    ctx.font = font(700, size);
-    this.spaced(size * 0.14);
-    ctx.fillText(TITLE, CX + size * 0.07, 104);
-    this.spaced(0);
+    const titleFont = font(700, size);
+    const spacing = size * 0.14;
+    const titleW = this.measure(TITLE, titleFont, spacing);
+    const landed = INTRO.letters + (TITLE.length - 1) * INTRO.letterStep + INTRO.letterDur;
+    const titlePop = 1 + pop(t - landed) * 0.4;
+    ctx.save();
+    ctx.translate(CX, 90);
+    ctx.scale(titlePop, titlePop);
+    ctx.font = titleFont;
+    ctx.fillStyle = C.ink;
+    ctx.textAlign = 'left';
+    for (let i = 0; i < TITLE.length; i++) {
+      const p = beat(INTRO.letters + i * INTRO.letterStep, INTRO.letterDur);
+      if (p <= 0) continue;
+      const x = -titleW / 2 + spacing / 2 + this.measure(TITLE.slice(0, i), titleFont, spacing);
+      ctx.globalAlpha = Math.min(1, p * 2);
+      ctx.font = titleFont;
+      ctx.fillText(TITLE[i], x, 14 - (1 - easeOutBack(p)) * 26);
+    }
+    ctx.restore();
+    ctx.globalAlpha = 1;
 
-    // Rules wrap to the screen width, and the legend starts wherever they end.
-    let ry = 142;
-    ctx.font = font(400, 15);
+    // Rules rise in, one line after another. They wrap, and the legend starts where they end.
+    let ry = 160;
+    let line = 0;
+    ctx.textAlign = 'center';
+    ctx.font = font(400, 16);
     for (const rule of START_RULES) {
-      ctx.fillStyle = rule.warn ? C.danger : C.inkSoft;
-      for (const line of this.wrap(rule.text, WIDTH - 36)) {
-        ctx.fillText(line, CX, ry);
-        ry += 21;
+      for (const text of this.wrap(rule.text, WIDTH - 36)) {
+        const p = beat(INTRO.rules + line * INTRO.ruleStep, INTRO.ruleDur);
+        if (p > 0) {
+          ctx.globalAlpha = p;
+          ctx.fillStyle = rule.warn ? C.danger : C.inkSoft;
+          ctx.fillText(text, CX, ry + (1 - easeOutCubic(p)) * 10);
+        }
+        ry += 26;
+        line++;
       }
     }
+    ctx.globalAlpha = 1;
 
-    const top = ry + 34;
-    const rowH = 46;
-    const barX = 196;
+    // Legend block sized to its content (icon · name · weight bar · points) and centered.
+    const pointsLabel = (kind: Kind) => (kind === 'mine' ? '¡PERDÉS!' : `+${KINDS[kind].value}`);
+    const pointsFont = (kind: Kind) => font(700, kind === 'mine' ? 13 : 19);
+    const nameW = Math.max(...LEGEND.map((kind) => this.measure(KINDS[kind].name, font(600, 16))));
+    const pointsW = Math.max(...LEGEND.map((kind) => this.measure(pointsLabel(kind), pointsFont(kind))));
+    const iconCol = 32;
     const barW = 64;
+    const blockW = iconCol + 8 + nameW + 18 + barW + 16 + pointsW;
+    // Center what the eye sees: the icons' solid bodies (~12 px radius; the bomb's faint halo
+    // doesn't read as an edge) on the left, the end of the points text on the right.
+    const iconHalf = 12;
+    const inset = iconCol / 2 - iconHalf; // blank space inside the icon column, left of the bodies
+    const left = CX - (blockW - inset) / 2 - inset;
+    const nameOff = iconCol + 8;
+    const barOff = nameOff + nameW + 18;
+
+    const top = ry + 40;
+    const rowH = 50;
+    ctx.globalAlpha = beat(INTRO.legend - 0.12, 0.2);
     ctx.font = font(600, 11);
     ctx.fillStyle = C.inkSoft;
     this.spaced(2);
     ctx.textAlign = 'left';
-    ctx.fillText('PESO', barX, top - 6);
+    ctx.fillText('PESO', left + barOff, top - 6);
     ctx.textAlign = 'right';
-    ctx.fillText('PUNTOS', 332, top - 6);
+    ctx.fillText('PUNTOS', left + blockW, top - 6);
     this.spaced(0);
+    ctx.globalAlpha = 1;
 
     const maxMass = KINDS.mine.mass;
     LEGEND.forEach((kind, i) => {
-      const t = this.clock - 0.4 - i * 0.35;
-      if (t < 0) return;
+      // Rows slide in from alternating sides, like the results ladder.
+      const start = INTRO.legend + i * INTRO.rowStep;
+      const p = beat(start, INTRO.rowDur);
+      if (p <= 0) return;
       const k = KINDS[kind];
-      const y = top + 26 + i * rowH;
-      ctx.globalAlpha = Math.min(1, t * 4);
+      const y = top + 24 + i * rowH;
+      const x0 = left + (1 - easeOutBack(p)) * (i % 2 ? 70 : -70);
+      ctx.globalAlpha = p;
 
-      this.drawItem(kind, 52, y, this.clock * (kind === 'mine' ? 1.2 : 2));
+      this.drawItem(kind, x0 + iconCol / 2, y, this.clock * (kind === 'mine' ? 1.2 : 2));
 
       ctx.textAlign = 'left';
       ctx.fillStyle = C.ink;
       ctx.font = font(600, 16);
-      ctx.fillText(k.name, 78, y + 6);
+      ctx.fillText(k.name, x0 + nameOff, y + 6);
 
-      // Weight bar fills in, so pink visibly lands right next to the mine.
-      const fill = (k.mass / maxMass) * Math.min(1, t * 2);
+      // Weight bar fills once the row has landed, so pink visibly ends up right next to the bomb.
+      const fill = (k.mass / maxMass) * easeOutCubic(beat(start + INTRO.rowDur * 0.6, 0.35));
       ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.fillRect(barX, y - 3, barW, 6);
+      ctx.fillRect(x0 + barOff, y - 3, barW, 6);
       ctx.fillStyle = k.color;
-      ctx.fillRect(barX, y - 3, barW * fill, 6);
+      ctx.fillRect(x0 + barOff, y - 3, barW * fill, 6);
 
+      // Points pop as the row lands.
+      const s = 1 + pop(t - start - INTRO.rowDur);
+      ctx.save();
+      ctx.translate(x0 + blockW, y);
+      ctx.scale(s, s);
       ctx.textAlign = 'right';
-      ctx.font = font(700, kind === 'mine' ? 13 : 19);
+      ctx.font = pointsFont(kind);
       ctx.fillStyle = kind === 'mine' ? C.danger : k.light;
-      ctx.fillText(kind === 'mine' ? '¡PERDÉS!' : `+${k.value}`, 332, y + 7);
+      ctx.fillText(pointsLabel(kind), 0, 7);
+      ctx.restore();
     });
     ctx.globalAlpha = 1;
 
-    const after = this.clock - 0.4 - LEGEND.length * 0.35;
-    if (after > 0) {
-      ctx.globalAlpha = Math.min(1, after * 3);
-      ctx.textAlign = 'center';
-      ctx.fillStyle = C.inkSoft;
-      ctx.font = font(400, 14);
-      let ty = top + LEGEND.length * rowH + 24;
-      for (const tip of START_TIPS) {
-        for (const line of this.wrap(tip, WIDTH - 36)) {
-          ctx.fillText(line, CX, ty);
-          ty += 20;
+    // Tips rise in, then the prompt fades in and keeps pulsing.
+    ctx.textAlign = 'center';
+    ctx.font = font(400, 14);
+    let ty = top + LEGEND.length * rowH + 30;
+    let tip = 0;
+    for (const text of START_TIPS) {
+      for (const l of this.wrap(text, WIDTH - 36)) {
+        const p = beat(INTRO.tips + tip * 0.08, 0.3);
+        if (p > 0) {
+          ctx.globalAlpha = p;
+          ctx.fillStyle = C.inkSoft;
+          ctx.fillText(l, CX, ty + (1 - easeOutCubic(p)) * 8);
         }
-        ty += 4;
+        ty += 22;
+        tip++;
       }
-      ctx.globalAlpha = 0.6 + Math.sin(this.clock * 4) * 0.4;
+    }
+    const prompt = beat(INTRO.prompt, 0.3);
+    if (prompt > 0) {
+      ctx.globalAlpha = prompt * (0.6 + Math.sin(this.clock * 4) * 0.4);
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 18);
       this.spaced(3);
       // Under the tips, but never off the bottom of the screen.
       ctx.fillText('TOCÁ PARA EMPEZAR', CX, Math.min(HEIGHT - 28, Math.max(ty + 30, HEIGHT - 90)));
       this.spaced(0);
-      ctx.globalAlpha = 1;
     }
+    ctx.globalAlpha = 1;
   }
+
 
   /** Phase label under the score, plus a banner for ~2.5 s when a phase starts. */
   private drawPhase() {
@@ -1669,7 +1775,7 @@ export class Growcore implements MiniGame {
     const beat = (start: number, dur: number) => clamp01((t - start) / dur);
 
     ctx.fillStyle = `rgba(12,10,29,${0.72 * easeOutCubic(beat(0, RES.veil))})`;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.fillRect(VIEW.x0, VIEW.y0, VIEW.w, VIEW.h);
     ctx.textAlign = 'center';
 
     if (this.lostGems > 0) {
@@ -1828,7 +1934,6 @@ export class Growcore implements MiniGame {
     }
     if (!fx.score && t >= RES.countEnd) {
       fx.score = true;
-      this.uiBurst(CX, 155, ['#ffffff', C.gold, '#e3d7f2'], 22, 260);
       [0, 4, 7].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.22, type: 'triangle', gain: 0.1, delay: i * 0.03 }));
     }
     if (!fx.coins && t >= RES.coinsEnd && this.runCoins > 0) {
@@ -1841,8 +1946,7 @@ export class Growcore implements MiniGame {
       fx.msg = true;
       const res = this.result;
       if (res && res.pos === 1 && res.total > 1) {
-        // New record: confetti rain plus a fanfare.
-        this.uiBurst(CX, 450, [C.gold, '#ff8fb1', '#8fd8c9', '#b9a8ff', '#ffffff'], 70, 420, 520);
+        // New record: the stamp plus a fanfare (no confetti, kept clean on purpose).
         [0, 2, 4, 7, 9].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.3, type: 'triangle', gain: 0.13, delay: i * 0.08 }));
         vibrate([30, 40, 30]);
       } else {

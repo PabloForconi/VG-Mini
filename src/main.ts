@@ -1,7 +1,7 @@
 import './style.css';
 import { startLoop } from './engine/loop';
 import { Growcore } from './games/growcore';
-import { HEIGHT, WIDTH, type MiniGame } from './games/MiniGame';
+import { HEIGHT, VIEW, WIDTH, type MiniGame } from './games/MiniGame';
 
 interface GameEntry {
   title: string; // browser tab title
@@ -19,14 +19,23 @@ const games: Record<string, GameEntry> = {
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const ctx = canvas.getContext('2d')!;
 
+/**
+ * The canvas fills the whole window (no letterbox bars on tall phones); the logical play area
+ * is scaled to fit and centered inside it. VIEW tells games how much extra backdrop shows.
+ */
 function fit() {
   const dpr = window.devicePixelRatio || 1;
-  const scale = Math.min(innerWidth / WIDTH, innerHeight / HEIGHT);
-  canvas.style.width = `${WIDTH * scale}px`;
-  canvas.style.height = `${HEIGHT * scale}px`;
-  canvas.width = Math.round(WIDTH * scale * dpr);
-  canvas.height = Math.round(HEIGHT * scale * dpr);
-  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+  const w = innerWidth;
+  const h = innerHeight;
+  const scale = Math.min(w / WIDTH, h / HEIGHT);
+  const ox = (w - WIDTH * scale) / 2;
+  const oy = (h - HEIGHT * scale) / 2;
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  ctx.setTransform(scale * dpr, 0, 0, scale * dpr, ox * dpr, oy * dpr);
+  Object.assign(VIEW, { x0: -ox / scale, y0: -oy / scale, w: w / scale, h: h / scale, px: scale * dpr, scale, ox, oy });
 }
 fit();
 window.addEventListener('resize', fit);

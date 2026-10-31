@@ -26,4 +26,8 @@ body {
 
 canvas {
   display: block;
+  /* Fills the whole window (main.ts sizes it); the play area is centered inside by transform. */
+  position: fixed;
+  left: 0;
+  top: 0;
 }

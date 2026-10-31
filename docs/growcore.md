@@ -1,6 +1,6 @@
 # GROWCORE — documento de diseño
 
-> Mantené presionado para atraer. Tocá el núcleo para liberar la carga y sumar puntos. ¡Cuidado con las bombas! Si las atraés, perdés todo lo acumulado.
+> Mantené para atraer. Tocá el núcleo para liberar la carga. ¡Cuidado con las bombas!
 
 ## Pitch
 
@@ -142,7 +142,7 @@ gancho de reintento:
 - La primera vez: "Tu primera partida".
 
 Todo entra animado en ~1,3 s (velo, conteo rápido del puntaje con "pop" y chispas,
-monedas, filas que se deslizan, mensaje o sello de récord con confeti); se puede
+monedas, filas que se deslizan, mensaje o sello de récord con fanfarria); se puede
 reintentar desde los 0,6 s aunque la animación no haya terminado. Tiempos en `RES`.
 
 En el dispositivo también se guardan el mute y si el jugador ya hizo estallar el
