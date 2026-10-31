@@ -1,4 +1,5 @@
-import { isHolding } from '../engine/input';
+import { Drone, isMuted, noise, setMuted, tone, vibrate } from '../engine/audio';
+import { isHolding, pointer, takePress } from '../engine/input';
 import { loadNumber, saveNumber } from '../engine/storage';
 import { HEIGHT, WIDTH, type MiniGame } from './MiniGame';
 
@@ -37,6 +38,14 @@ const T = {
   nearMissPoints: 5,
   pointsPerCoin: 5,
 };
+
+/** Pentatonic steps so rising combo notes always sound musical. */
+const SCALE = [0, 2, 4, 7, 9];
+const note = (step: number) =>
+  523.25 * 2 ** ((SCALE[step % SCALE.length] + 12 * Math.floor(step / SCALE.length)) / 12);
+
+/** Mute toggle hit box, top-left corner (only active outside of play). */
+const MUTE_BTN = { x: 8, y: 6, w: 40, h: 34 };
 
 type Kind = 'shard' | 'gem' | 'mine';
 
@@ -102,6 +111,8 @@ export class Iman implements MiniGame {
   private overAt = 0;
   private shake = 0;
   private corePop = 0;
+  private holdTime = 0;
+  private hum = new Drone();
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -109,14 +120,30 @@ export class Iman implements MiniGame {
     return Math.min(T.multMax, 1 + Math.floor(this.combo / T.comboPerLevel));
   }
 
+  private hitMute() {
+    const r = this.ctx.canvas.getBoundingClientRect();
+    const x = ((pointer.x - r.left) / r.width) * WIDTH;
+    const y = ((pointer.y - r.top) / r.height) * HEIGHT;
+    const b = MUTE_BTN;
+    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+  }
+
   update(dt: number) {
     this.clock += dt;
-    const wasHolding = this.holding;
     this.holding = isHolding();
-    const pressed = this.holding && !wasHolding;
+    const pressed = takePress();
 
     this.updateFx(dt);
 
+    // Field hum rises in pitch the longer you hold: you hear the greed.
+    this.holdTime = this.holding && this.state === 'playing' ? this.holdTime + dt : 0;
+    const h = Math.min(this.holdTime, 2.5);
+    this.hum.set(this.holdTime > 0 ? 0.05 + h * 0.025 : 0, 65 + h * 45);
+
+    if (this.state !== 'playing' && pressed && this.hitMute()) {
+      setMuted(!isMuted());
+      return;
+    }
     if (this.state === 'ready') {
       if (pressed) this.start();
       return;
@@ -173,6 +200,9 @@ export class Iman implements MiniGame {
         if (b.danger && !inRing) {
           this.score += T.nearMissPoints * this.mult;
           this.popup(b.x, b.y, `¡CERCA! +${T.nearMissPoints * this.mult}`, '#ffd23f');
+          tone({ freq: 900, to: 300, dur: 0.25, type: 'triangle', gain: 0.15 });
+          tone({ freq: 1320, dur: 0.15, gain: 0.1, delay: 0.08 });
+          vibrate(15);
         }
         b.danger = inRing;
       }
@@ -192,6 +222,7 @@ export class Iman implements MiniGame {
     this.combo = 0;
     this.comboTimer = 0;
     this.newBest = false;
+    tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
   }
 
   private spawn() {
@@ -235,8 +266,22 @@ export class Iman implements MiniGame {
     this.corePop = 1;
     this.burst(CX, CY, k.color, b.kind === 'gem' ? 24 : 8, 140);
     this.popup(CX + rand(-30, 30), CY - 34, `+${pts}`, k.color);
-    if (this.combo > 0 && this.combo % T.comboPerLevel === 0 && this.mult > 1) {
+
+    // Each catch in a combo climbs the scale; the climb itself is the reward.
+    const step = Math.min(this.combo - 1, 14);
+    if (b.kind === 'gem') {
+      tone({ freq: note(step + 5), dur: 0.35, type: 'triangle', gain: 0.18 });
+      tone({ freq: note(step + 7), dur: 0.35, type: 'triangle', gain: 0.12, delay: 0.06 });
+      vibrate(10);
+    } else {
+      tone({ freq: note(step), dur: 0.14, type: 'triangle', gain: 0.16 });
+    }
+
+    if (this.combo % T.comboPerLevel === 0 && this.mult > 1) {
       this.popup(CX, CY + 44, `x${this.mult}!`, '#ffd23f');
+      [0, 2, 4].forEach((s, i) =>
+        tone({ freq: note(step + s + 5), dur: 0.12, type: 'square', gain: 0.06, delay: 0.05 + i * 0.05 }),
+      );
     }
   }
 
@@ -247,6 +292,9 @@ export class Iman implements MiniGame {
     this.burst(mine.x, mine.y, '#ff3b3b', 40, 260);
     this.burst(CX, CY, '#ffffff', 20, 180);
     this.bodies = this.bodies.filter((b) => !b.dead);
+    noise(0.6, 0.5, 2000);
+    tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
+    vibrate([60, 40, 120]);
 
     this.runCoins = Math.floor(this.score / T.pointsPerCoin);
     this.coins += this.runCoins;
@@ -255,6 +303,7 @@ export class Iman implements MiniGame {
       this.best = this.score;
       this.newBest = true;
       saveNumber('iman.best', this.best);
+      [0, 2, 4, 5].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.25, type: 'triangle', gain: 0.15, delay: 0.5 + i * 0.1 }));
     }
   }
 
@@ -409,6 +458,39 @@ export class Iman implements MiniGame {
     ctx.restore();
   }
 
+  /** Speaker drawn with paths (emoji glyphs vary too much across phones). */
+  private drawMuteIcon() {
+    const { ctx } = this;
+    const x = MUTE_BTN.x + 12;
+    const y = MUTE_BTN.y + MUTE_BTN.h / 2;
+    ctx.save();
+    ctx.fillStyle = ctx.strokeStyle = isMuted() ? '#6b6596' : '#c9c4ff';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - 6, y - 4);
+    ctx.lineTo(x - 2, y - 4);
+    ctx.lineTo(x + 4, y - 9);
+    ctx.lineTo(x + 4, y + 9);
+    ctx.lineTo(x - 2, y + 4);
+    ctx.lineTo(x - 6, y + 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    if (isMuted()) {
+      ctx.moveTo(x + 9, y - 5);
+      ctx.lineTo(x + 17, y + 5);
+      ctx.moveTo(x + 17, y - 5);
+      ctx.lineTo(x + 9, y + 5);
+    } else {
+      ctx.arc(x + 6, y, 6, -0.9, 0.9);
+      ctx.moveTo(x + 6 + 11 * Math.cos(-0.9), y + 11 * Math.sin(-0.9));
+      ctx.arc(x + 6, y, 11, -0.9, 0.9);
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
   private drawHud() {
     const { ctx } = this;
     ctx.textAlign = 'right';
@@ -416,6 +498,8 @@ export class Iman implements MiniGame {
     ctx.fillStyle = '#ffd23f';
     ctx.fillText(`● ${this.coins}`, WIDTH - 14, 26);
     ctx.textAlign = 'center';
+
+    if (this.state !== 'playing') this.drawMuteIcon();
 
     if (this.state === 'ready') {
       ctx.fillStyle = '#ffffff';
