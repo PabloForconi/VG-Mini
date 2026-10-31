@@ -48,7 +48,15 @@ const T = {
 };
 
 type ShieldKind = 'shield' | 'pizza';
-type Kind = 'cyan' | 'yellow' | 'pink' | 'mine' | ShieldKind;
+type FakeKind = 'fakeCyan' | 'fakeYellow' | 'fakePink';
+type Kind = 'cyan' | 'yellow' | 'pink' | 'mine' | ShieldKind | FakeKind;
+
+/**
+ * Extra mass of a fake gem over the real gem it imitates. 0 = arrives exactly as fast as the
+ * real one, so only its red look gives it away; raise it toward the bomb (3.4) to let speed
+ * betray fakes too.
+ */
+const FAKE_MASS_EXTRA = 0;
 
 /**
  * Look: calm night sky (deep indigo, stars, faint nebulae) with flat-shaded
@@ -76,6 +84,17 @@ interface KindDef {
   name: string;
   blurb?: string; // banner line instead of "+value"
 }
+
+/** Shared look of the fake gems: the bomb's reds on a jagged crystal shape. */
+const FAKE_LOOK = {
+  value: 0,
+  load: 0,
+  color: '#f2565c',
+  light: '#ff8a80',
+  dark: '#a52834',
+  name: 'Gema falsa',
+  blurb: 'Rojas: son bombas disfrazadas',
+};
 
 /**
  * Risk ladder: heavier gems answer the pull slower and pay more. Pink sits
@@ -109,12 +128,19 @@ const KINDS: Record<Kind, KindDef> = {
     name: 'Escudo pizza',
     blurb: 'Cada bomba rompe solo 1 porción',
   },
+  // Fake gems: bombs in disguise, each the size (and by default the weight) of a real gem.
+  fakeCyan: { ...FAKE_LOOK, r: 7, mass: 1 + FAKE_MASS_EXTRA },
+  fakeYellow: { ...FAKE_LOOK, r: 9, mass: 2 + FAKE_MASS_EXTRA },
+  fakePink: { ...FAKE_LOOK, r: 11, mass: 3 + FAKE_MASS_EXTRA },
 };
 
 /** How many slices each shield has; a mine breaks only the slice it hits. */
 const SHIELD_SLICES: Record<ShieldKind, number> = { shield: 1, pizza: 6 };
 
 const isShield = (k: Kind): k is ShieldKind => k === 'shield' || k === 'pizza';
+const isFake = (k: Kind): k is FakeKind => k === 'fakeCyan' || k === 'fakeYellow' || k === 'fakePink';
+/** Touching the core with one of these ends the run (shields block them all the same). */
+const isDeadly = (k: Kind) => k === 'mine' || isFake(k);
 
 /**
  * Colors the pizza pickup cycles through (RGB): pink, yellow, green, sky
@@ -173,6 +199,31 @@ const PHASES: Phase[] = [
     interval: 0.36,
     bag: { cyan: 2, yellow: 2, pink: 1, mine: 5 },
     title: '¡CAOS!',
+    shields: ['shield', 'pizza'],
+  },
+  // Fake gems, one size per phase, heaviest first. Only the first one gets a banner (it has to
+  // explain the idea); after that the phase number just ticks up and the new fake leads in.
+  // Bombs give way to fakes so the deadly share stays at 5 in 10.
+  {
+    at: 135,
+    interval: 0.36,
+    bag: { cyan: 2, yellow: 2, pink: 1, mine: 4, fakePink: 1 },
+    title: '¡GEMAS FALSAS!',
+    intro: 'fakePink',
+    shields: ['shield', 'pizza'],
+  },
+  {
+    at: 160,
+    interval: 0.36,
+    bag: { cyan: 2, yellow: 2, pink: 1, mine: 3, fakePink: 1, fakeYellow: 1 },
+    intro: 'fakeYellow',
+    shields: ['shield', 'pizza'],
+  },
+  {
+    at: 185,
+    interval: 0.36,
+    bag: { cyan: 2, yellow: 2, pink: 1, mine: 2, fakePink: 1, fakeYellow: 1, fakeCyan: 1 },
+    intro: 'fakeCyan',
     shields: ['shield', 'pizza'],
   },
 ];
@@ -299,8 +350,11 @@ function buildMineSprites(px: number): HTMLCanvasElement[] {
   });
 }
 
-/** Glow size around a gem, in device px (canvas shadowBlur ignores transforms). */
-const gemBlur = (kind: Kind) => 6 + KINDS[kind].load * 3;
+/**
+ * Glow size around a gem, in device px (canvas shadowBlur ignores transforms). Fakes carry no
+ * load, so they glow by size instead (r 7/9/11 → like a load of 1/2/3).
+ */
+const gemBlur = (kind: Kind) => 6 + (isFake(kind) ? (KINDS[kind].r - 5) / 2 : KINDS[kind].load) * 3;
 
 /** Half-size of a gem sprite in logical px: the diamond plus room for its glow. */
 const gemExtent = (kind: Kind) => Math.ceil(KINDS[kind].r * 1.3 + gemBlur(kind) + 2);
@@ -327,6 +381,25 @@ function buildGemSprite(kind: Kind, px: number): HTMLCanvasElement {
   };
   g.shadowColor = k.color;
   g.shadowBlur = gemBlur(kind) * px;
+  if (isFake(kind)) {
+    // Jagged crystal (the "cursed gem"): 8 points of alternating length, as tall as a real gem,
+    // flat-shaded facet by facet with the light from the upper left.
+    const reach = [1.3, 0.76, 1.07, 0.69];
+    const pts = Array.from({ length: 8 }, (_, i) => {
+      const a = -Math.PI / 2 + (i * Math.PI) / 4;
+      const rr = reach[i % 4] * r;
+      return [Math.cos(a) * rr, Math.sin(a) * rr];
+    });
+    tri(pts, k.color);
+    g.shadowBlur = 0;
+    for (let i = 0; i < 8; i++) {
+      const p = pts[i];
+      const q = pts[(i + 1) % 8];
+      const facing = Math.cos(Math.atan2(p[1] + q[1], p[0] + q[0]) + (3 * Math.PI) / 4);
+      tri([[0, 0], p, q], facing > 0.4 ? k.light : facing < -0.4 ? k.dark : k.color);
+    }
+    return cv;
+  }
   tri([[0, -r * 1.3], [r, 0], [0, r * 1.3], [-r, 0]], k.color);
   g.shadowBlur = 0;
   tri([[0, -r * 1.3], [-r, 0], [0, 0]], k.light);
@@ -357,7 +430,7 @@ const VORTEX = {
   fallIdle: 0.12, // fall cycles per second when not touching
   fallPull: 1.4, // … at a full hold
   openTime: 2.5, // seconds of holding to open all the way (same as the hum's peak)
-  reachIdle: 10, // px from the core edge where motes appear when closed: just past the progress ring (+6)
+  reachIdle: 20, // px from the core edge where motes appear when closed: well past the progress ring (+6)
   reachOpen: 64, // … when fully open
   growReach: 24, // extra open reach at max core size
   curl: 2.2, // extra radians a mote turns as it falls in (keeps a spiral shape)
@@ -486,7 +559,7 @@ const RES = {
 const INTRO = {
   letters: 0.05, // title letters start dropping in …
   letterStep: 0.05, // … one after another …
-  letterDur: 0.35, // … each landing with a small overshoot; the title pops when the last lands
+  letterDur: 0.35, // … each landing with a small overshoot
   rules: 0.55, // rule lines rise in
   ruleStep: 0.1,
   ruleDur: 0.3,
@@ -563,7 +636,8 @@ export class Growcore implements MiniGame {
   private coreGlows = new Map<string, HTMLCanvasElement>();
   private mineSprites: HTMLCanvasElement[] = [];
   private mineSpritePx = 0;
-  private mineStreak = 0; // consecutive mines dealt so far
+  private mineStreak = 0; // consecutive deadly items (bombs, fakes) dealt so far
+  private introNext: Kind | null = null; // a phase's new item, dealt before anything else
   private bannerAt = -99; // clock time the current phase banner appeared
   private shieldTimer = 0; // countdown to the next random shield drop
   private shieldKind: ShieldKind | null = null;
@@ -786,19 +860,19 @@ export class Growcore implements MiniGame {
       oy = CY - b.y;
       d = Math.hypot(ox, oy);
 
-      if (b.kind === 'mine' && d < this.shieldR + k.r && this.blockMine(b)) {
+      if (isDeadly(b.kind) && d < this.shieldR + k.r && this.blockMine(b)) {
         b.dead = true;
         continue;
       }
 
       if (d < this.coreR + k.r) {
         b.dead = true;
-        if (b.kind === 'mine') return this.gameOver(b);
+        if (isDeadly(b.kind)) return this.gameOver(b);
         this.collect(b);
         continue;
       }
 
-      if (b.kind === 'mine') {
+      if (isDeadly(b.kind)) {
         const inRing = d < this.coreR + k.r + T.nearMissGap;
         if (b.danger && !inRing) {
           this.score += T.nearMissPoints;
@@ -832,6 +906,7 @@ export class Growcore implements MiniGame {
     this.phase = 0;
     this.bag = [];
     this.mineStreak = 0;
+    this.introNext = null;
     this.bannerAt = -99;
     this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
     this.shieldKind = null;
@@ -842,14 +917,18 @@ export class Growcore implements MiniGame {
   private enterPhase(i: number) {
     const p = PHASES[i];
     this.phase = i;
-    // New item goes first so it shows up while the banner is on screen.
-    this.bag = p.intro ? [p.intro] : [];
+    // New item goes first so it shows up right away (see nextKind).
+    this.introNext = p.intro ?? null;
+    this.bag = [];
     this.spawnTimer = Math.min(this.spawnTimer, 0.4);
     // A shield intro is this phase's first drop; random drops follow after.
     if (p.intro && isShield(p.intro)) this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
     this.bannerAt = this.clock;
-    [0, 2, 4, 7].forEach((s, j) => tone({ freq: note(s + 3), dur: 0.18, type: 'square', gain: 0.07, delay: j * 0.08 }));
-    vibrate(25);
+    // Fanfare only with a banner: quiet phases just tick the counter up.
+    if (p.title) {
+      [0, 2, 4, 7].forEach((s, j) => tone({ freq: note(s + 3), dur: 0.18, type: 'square', gain: 0.07, delay: j * 0.08 }));
+      vibrate(25);
+    }
   }
 
   /** The current phase's mix, shuffled. */
@@ -867,18 +946,26 @@ export class Growcore implements MiniGame {
 
   /** Deals the next kind from the bag, never more than MAX_MINE_STREAK mines in a row. */
   private nextKind(): Kind {
+    // A phase's new item leads, unless it's deadly right after a full streak: then one safe
+    // item goes first and the new one follows on the next spawn.
+    const intro = this.introNext;
+    if (intro && !(isDeadly(intro) && this.mineStreak >= MAX_MINE_STREAK)) {
+      this.introNext = null;
+      this.mineStreak = isDeadly(intro) ? this.mineStreak + 1 : 0;
+      return intro;
+    }
     if (this.bag.length === 0) this.bag = this.freshBag();
-    if (this.mineStreak >= MAX_MINE_STREAK && this.bag[0] === 'mine') {
+    if (this.mineStreak >= MAX_MINE_STREAK && isDeadly(this.bag[0])) {
       // Swap in the first gem; if the bag is all mines, borrow from the next one.
-      let i = this.bag.findIndex((k) => k !== 'mine');
+      let i = this.bag.findIndex((k) => !isDeadly(k));
       if (i < 0) {
         this.bag.push(...this.freshBag());
-        i = this.bag.findIndex((k) => k !== 'mine');
+        i = this.bag.findIndex((k) => !isDeadly(k));
       }
       [this.bag[0], this.bag[i]] = [this.bag[i], this.bag[0]];
     }
     const kind = this.bag.shift()!;
-    this.mineStreak = kind === 'mine' ? this.mineStreak + 1 : 0;
+    this.mineStreak = isDeadly(kind) ? this.mineStreak + 1 : 0;
     return kind;
   }
 
@@ -1094,7 +1181,7 @@ export class Growcore implements MiniGame {
     ctx.lineWidth = 1;
     for (const b of this.bodies) {
       if (active && Math.hypot(CX - b.x, CY - b.y) < field) {
-        ctx.strokeStyle = b.kind === 'mine' ? 'rgba(255,93,93,0.35)' : 'rgba(200,190,255,0.16)';
+        ctx.strokeStyle = isDeadly(b.kind) ? 'rgba(255,93,93,0.35)' : 'rgba(200,190,255,0.16)';
         ctx.beginPath();
         ctx.moveTo(CX, CY);
         ctx.lineTo(b.x, b.y);
@@ -1482,7 +1569,7 @@ export class Growcore implements MiniGame {
 
   /**
    * Start screen, animated in the same language as the results screen (see INTRO): title
-   * letters drop in and the title pops, rules rise in, legend rows slide in from alternating
+   * letters drop in, rules rise in, legend rows slide in from alternating
    * sides and pop their points, then the tips and the pulsing prompt. Tapping starts at any time.
    */
   private drawTitle() {
@@ -1490,18 +1577,15 @@ export class Growcore implements MiniGame {
     const t = this.clock - this.introAt;
     const beat = (start: number, dur: number) => clamp01((t - start) / dur);
 
-    // Title: letters drop in one by one with a small overshoot, then the whole word pops.
+    // Title: letters drop in one by one with a small overshoot (no extra pop at the end).
     // Shrink the wide-tracked title until it fits, whatever the font metrics on the device.
     let size = 50;
     while (size > 30 && this.measure(TITLE, font(700, size), size * 0.14) > WIDTH - 40) size -= 2;
     const titleFont = font(700, size);
     const spacing = size * 0.14;
     const titleW = this.measure(TITLE, titleFont, spacing);
-    const landed = INTRO.letters + (TITLE.length - 1) * INTRO.letterStep + INTRO.letterDur;
-    const titlePop = 1 + pop(t - landed) * 0.4;
     ctx.save();
     ctx.translate(CX, 90);
-    ctx.scale(titlePop, titlePop);
     ctx.font = titleFont;
     ctx.fillStyle = C.ink;
     ctx.textAlign = 'left';

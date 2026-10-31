@@ -27,6 +27,7 @@ dejo crecer?*
 | Gema amarilla | 2 | 5 | 2 |
 | Gema rosa | 3 | 15 | 3 |
 | Mina | 3,4 | perdés lo no cobrado | — |
+| Gema falsa (3 tamaños) | 1, 2 o 3 (igual que la real) | perdés lo no cobrado | — |
 
 La gema rosa pesa casi lo mismo que una mina: para traerla tenés que mantener tanto
 como para arrastrar una mina también. Cada rosa en pantalla es un "¿me la juego?".
@@ -49,11 +50,29 @@ puntaje, se ve "FASE N".
 | 4 — ¡NUEVO ESCUDO! simple | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple |
 | 5 — ¡NUEVO ESCUDO! pizza | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza |
 | 6 — ¡CAOS! | 105 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s | simple o pizza |
+| 7 — ¡GEMAS FALSAS! | 135 s | 2 celestes, 2 amarillas, 1 rosa, 4 minas, 1 falsa grande | 0,36 s | simple o pizza |
+| 8 (sin cartel) | 160 s | 2 celestes, 2 amarillas, 1 rosa, 3 minas, 1 falsa grande, 1 falsa mediana | 0,36 s | simple o pizza |
+| 9 (sin cartel) | 185 s | 2 celestes, 2 amarillas, 1 rosa, 2 minas, 1 falsa de cada tamaño | 0,36 s | simple o pizza |
 
 **Bolsa en vez de dado:** las apariciones se reparten de una bolsa mezclada con la
 mezcla de la fase, así las proporciones se cumplen siempre (sin rachas raras ni
-minutos sin rosas). Además nunca salen más de 2 minas seguidas. La velocidad de las
+minutos sin rosas). Además nunca salen más de 2 mortales seguidos (minas o gemas falsas); un escudo corta la racha. La velocidad de las
 gemas sigue subiendo de a poco con el tiempo.
+
+## Gemas falsas
+
+Desde la fase 7 aparecen **gemas falsas**: bombas disfrazadas. Son rojas, con la
+silueta dentada de la "gema maldita" (8 puntas) y del mismo tamaño que la gema
+buena que imitan: grande (rosa), mediana (amarilla) y pequeña (celeste). Pesan
+**lo mismo** que su gema real, así que el peso no las delata: hay que mirarlas.
+Atraer una es igual que atraer una mina (los escudos también las paran).
+
+Entran de a una por fase, primero la más pesada: la grande en la 7 (con el cartel
+"¡GEMAS FALSAS!", que explica la idea), la mediana en la 8 y la pequeña en la 9.
+Las fases 8 y 9 no tienen cartel ni fanfarria: solo sube el número de fase y la
+falsa nueva es lo primero que aparece (o lo segundo, si justo venían 2 mortales
+seguidos). Las falsas reemplazan minas, así que la proporción de mortales se
+mantiene en 5 de cada 10.
 
 ## Escudos
 
