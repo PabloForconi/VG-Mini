@@ -1117,34 +1117,95 @@ export class Iman implements MiniGame {
     const p = PHASES[this.phase];
     const t = this.clock - this.bannerAt;
     if (!p.title || t > 2.5) return;
-    // Pop in, hold, fade out.
+    // Fade in while rising a few px into place, hold, fade out.
     const alpha = Math.min(1, t * 6, (2.5 - t) * 2);
-    const scale = 1 + Math.max(0, 0.25 - t) * 1.6;
+    const rise = Math.max(0, 0.2 - t) * 50;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(CX, 150);
-    ctx.scale(scale, scale);
-    ctx.fillStyle = p.intro ? KINDS[p.intro].light : C.danger;
-    ctx.font = font(700, 28);
-    ctx.fillText(p.title, 0, 0);
-    if (p.intro) {
-      const k = KINDS[p.intro];
-      ctx.font = font(600, 16);
-      // Shields have no points to show, so they get a name line plus a how-it-works line.
-      const label = k.blurb ? k.name : `${k.name}  +${k.value}`;
-      const w = ctx.measureText(label).width;
-      this.drawItem(p.intro, -w / 2 - 6, 26, this.clock * 2);
-      ctx.fillStyle = C.ink;
-      ctx.textAlign = 'left';
-      ctx.fillText(label, -w / 2 + 12, 32);
-      if (k.blurb) {
-        ctx.textAlign = 'center';
-        ctx.fillStyle = C.inkSoft;
-        ctx.font = font(400, 14);
-        ctx.fillText(k.blurb, 0, 54);
-      }
-    }
+    ctx.translate(CX, 146 + rise);
+    this.drawBannerTag(p);
     ctx.restore();
+  }
+
+  /** Rounded label with a dark translucent fill, drawn around the banner text. */
+  private drawLabel(x: number, y: number, w: number, h: number) {
+    const { ctx } = this;
+    const r = Math.min(16, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(12,10,29,0.62)';
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  /** Text pieces shared by every banner style. Shields have no points, so they get a how-it-works line. */
+  private bannerText(p: Phase) {
+    const k = p.intro ? KINDS[p.intro] : null;
+    return {
+      k,
+      color: k ? k.light : C.danger,
+      label: k ? (k.blurb ? k.name : `${k.name}  +${k.value}`) : '',
+      blurb: k?.blurb ?? '',
+    };
+  }
+
+  /** Width of `text` in `f`, honoring letter spacing. */
+  private measure(text: string, f: string, spacing = 0) {
+    this.ctx.font = f;
+    this.spaced(spacing);
+    const w = this.ctx.measureText(text).width;
+    this.spaced(0);
+    return w;
+  }
+
+  private drawIcon(kind: Kind, x: number, y: number, scale: number) {
+    const { ctx } = this;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    this.drawItem(kind, 0, 0, this.clock * 2);
+    ctx.restore();
+  }
+
+  /** Phase banner: rounded dark label, small spaced title on top, icon + name + points under it. */
+  private drawBannerTag(p: Phase) {
+    const { ctx } = this;
+    const { k, color, label, blurb } = this.bannerText(p);
+    const tf = font(700, 14);
+    const lf = font(600, 15);
+    const bf = font(400, 12);
+    const tw = this.measure(p.title!, tf, 3);
+    const lw = k ? this.measure(label, lf) + 26 : 0;
+    const bw = blurb ? this.measure(blurb, bf) : 0;
+    const w = Math.max(tw, lw, bw) + 36;
+    const h = k ? (blurb ? 80 : 60) : 36;
+    this.drawLabel(-w / 2, -22, w, h);
+
+    ctx.textAlign = 'center';
+    ctx.fillStyle = color;
+    ctx.font = tf;
+    this.spaced(3);
+    ctx.fillText(p.title!, 0, k ? 0 : 1);
+    this.spaced(0);
+    if (!k) return;
+    this.drawIcon(p.intro!, -lw / 2 + 8, 19, 0.8);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = C.ink;
+    ctx.font = lf;
+    ctx.fillText(label, -lw / 2 + 24, 25);
+    if (blurb) {
+      ctx.textAlign = 'center';
+      ctx.fillStyle = C.inkSoft;
+      ctx.font = bf;
+      ctx.fillText(blurb, 0, 46);
+    }
   }
 
   private drawHud() {
