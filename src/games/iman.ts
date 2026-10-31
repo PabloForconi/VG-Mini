@@ -40,15 +40,15 @@ type ShieldKind = 'shield' | 'pizza';
 type Kind = 'cyan' | 'yellow' | 'pink' | 'mine' | ShieldKind;
 
 /**
- * Look: pastel dawn sky, flat-shaded isometric shapes (light / mid / shadow
- * faces) and a deep plum "ink" for text and danger, so mines pop against the
- * soft background.
+ * Look: calm night sky (deep indigo, stars, faint nebulae) with flat-shaded
+ * pastel shapes floating in it; light ink for text, red for danger.
  */
 const C = {
-  ink: '#4f3b56',
-  inkSoft: '#8c7591',
-  danger: '#d9584a',
-  gold: '#b98326',
+  ink: '#f3ecfa', // main text on the night sky
+  inkSoft: '#a99cc8',
+  onPastel: '#2a2140', // text drawn on top of pastel shapes (the core)
+  danger: '#ff5d5d',
+  gold: '#f2c46d',
   white: '#ffffff',
 };
 const font = (weight: number, size: number) => `${weight} ${size}px "Josefin Sans", system-ui, sans-serif`;
@@ -60,7 +60,7 @@ interface KindDef {
   load: number; // how much a catch grows the core
   color: string; // mid tone: particles, bars
   light: string; // lit facet
-  dark: string; // shaded facet; also used for text on the pastel sky
+  dark: string; // shaded facet
   name: string;
   blurb?: string; // banner line instead of "+value"
 }
@@ -74,7 +74,7 @@ const KINDS: Record<Kind, KindDef> = {
   cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#7fcabc', light: '#b2e6dc', dark: '#4f9e91', name: 'Gema celeste' },
   yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ecc56a', light: '#f8e1a0', dark: '#c4922f', name: 'Gema amarilla' },
   pink: { r: 11, mass: 3, value: 15, load: 3, color: '#e894a8', light: '#f6bfcb', dark: '#c4637c', name: 'Gema rosa' },
-  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#4f3b56', light: '#6e5677', dark: '#3a2a40', name: 'Mina' },
+  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#e8484f', light: '#ff6b70', dark: '#b8323a', name: 'Mina' },
   shield: {
     r: 11,
     mass: 3.2,
@@ -155,44 +155,33 @@ const MAX_MINE_STREAK = 2;
 
 /** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
 const TIERS = [
-  { load: 0, mult: 1, top: '#fffaf3', left: '#efe2d6', right: '#d9c7b8', ink: '#8c7591' },
-  { load: 5, mult: 2, top: '#e3f3ed', left: '#c2e4d7', right: '#9ccbbb', ink: '#5c9f8e' },
-  { load: 10, mult: 3, top: '#bfe6de', left: '#8ecdc0', right: '#62ae9f', ink: '#3f8a7c' },
-  { load: 20, mult: 5, top: '#fae4a6', left: '#f0c970', right: '#d6a446', ink: '#b07f22' },
-  { load: 35, mult: 8, top: '#fbc8b4', left: '#f19d82', right: '#d6765c', ink: '#b9583f' },
+  { load: 0, mult: 1, top: '#fffaf3', left: '#efe2d6', right: '#d9c7b8', ink: '#e9e1f2' },
+  { load: 5, mult: 2, top: '#e3f3ed', left: '#c2e4d7', right: '#9ccbbb', ink: '#bfe8dc' },
+  { load: 10, mult: 3, top: '#bfe6de', left: '#8ecdc0', right: '#62ae9f', ink: '#8fd8c9' },
+  { load: 20, mult: 5, top: '#fae4a6', left: '#f0c970', right: '#d6a446', ink: '#f6d27e' },
+  { load: 35, mult: 8, top: '#fbc8b4', left: '#f19d82', right: '#d6765c', ink: '#f7a487' },
 ];
 
-/** Background architecture: isometric prisms kept to the edges so the field stays clear. */
-interface Block {
-  x: number; // center of the front edge
-  base: number; // y of the front-bottom corner
-  w: number; // half width
-  h: number;
-  tone: keyof typeof BLOCK_TONES;
-  windows?: number;
-  roof?: 'dome' | 'cone';
-}
+/**
+ * Star field, generated once from a fixed seed (not Math.random) so it is the
+ * same every run. A few big ones are drawn as four-point sparkles.
+ */
+const STARS = (() => {
+  let s = 20261031;
+  const rnd = () => ((s = Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  return Array.from({ length: 110 }, () => ({
+    x: rnd() * WIDTH,
+    y: rnd() * HEIGHT,
+    size: rnd() < 0.05 ? 2.5 + rnd() * 1.2 : 0.6 + rnd() * 1.2,
+    phase: rnd() * Math.PI * 2,
+    speed: 0.6 + rnd() * 1.8,
+  }));
+})();
 
-/** [top, left face, right face], pale so the scenery never competes with play. */
-const BLOCK_TONES = {
-  lilac: ['#efe7f3', '#ddd0e8', '#c9b8da'],
-  rose: ['#f8e0dc', '#edc3c1', '#dca6ab'],
-  mint: ['#e2f2ea', '#c4e2d5', '#a3cdbb'],
-} as const;
-
-const FAR_TOWERS: Block[] = [
-  { x: 22, base: 640, w: 30, h: 300, tone: 'lilac', roof: 'cone' },
-  { x: 74, base: 640, w: 20, h: 170, tone: 'lilac', roof: 'dome' },
-  { x: 300, base: 640, w: 18, h: 200, tone: 'lilac' },
-  { x: 342, base: 640, w: 34, h: 340, tone: 'lilac', roof: 'dome' },
-];
-
-const NEAR_TOWERS: Block[] = [
-  { x: 40, base: 664, w: 34, h: 150, tone: 'rose', windows: 3, roof: 'dome' },
-  { x: 106, base: 664, w: 24, h: 84, tone: 'mint', windows: 1 },
-  { x: 180, base: 676, w: 52, h: 42, tone: 'rose' },
-  { x: 260, base: 664, w: 22, h: 100, tone: 'mint', windows: 2, roof: 'cone' },
-  { x: 322, base: 664, w: 34, h: 172, tone: 'rose', windows: 3 },
+/** [x, y, radius, inner color]: barely-there haze so the sky isn't flat. */
+const NEBULAE: [number, number, number, string][] = [
+  [60, 150, 220, 'rgba(90,200,190,0.10)'],
+  [310, 520, 260, 'rgba(200,110,200,0.10)'],
 ];
 
 /** Pentatonic steps so rising notes always sound musical. */
@@ -560,7 +549,7 @@ export class Iman implements MiniGame {
       this.slices = new Array(SHIELD_SLICES[b.kind]).fill(true);
       this.corePop = 1;
       this.burst(CX, CY, k.color, 30, 180);
-      this.popup(CX, CY - this.shieldR - 14, `¡${k.name.toUpperCase()}!`, k.dark, 18);
+      this.popup(CX, CY - this.shieldR - 14, `¡${k.name.toUpperCase()}!`, k.light, 18);
       [0, 4, 7, 12].forEach((s, i) => tone({ freq: note(s), dur: 0.25, type: 'sine', gain: 0.14, delay: i * 0.06 }));
       vibrate(20);
       return;
@@ -570,7 +559,7 @@ export class Iman implements MiniGame {
     this.load += k.load;
     this.corePop = 1;
     this.burst(CX, CY, k.color, 8 * k.load, 140);
-    this.popup(CX + rand(-24, 24), CY - this.coreR - 10, `+${k.value}`, k.dark, 12 + k.load * 2);
+    this.popup(CX + rand(-24, 24), CY - this.coreR - 10, `+${k.value}`, k.light, 12 + k.load * 2);
 
     // Notes climb with the load: the higher the pitch, the more you risk.
     const step = Math.min(this.load, 24);
@@ -689,7 +678,7 @@ export class Iman implements MiniGame {
     ctx.lineWidth = 1;
     for (const b of this.bodies) {
       if (active && Math.hypot(CX - b.x, CY - b.y) < field) {
-        ctx.strokeStyle = b.kind === 'mine' ? 'rgba(217,88,74,0.35)' : 'rgba(79,59,86,0.14)';
+        ctx.strokeStyle = b.kind === 'mine' ? 'rgba(255,93,93,0.35)' : 'rgba(200,190,255,0.16)';
         ctx.beginPath();
         ctx.moveTo(CX, CY);
         ctx.lineTo(b.x, b.y);
@@ -712,8 +701,8 @@ export class Iman implements MiniGame {
     for (const p of this.popups) {
       ctx.globalAlpha = Math.min(1, p.life * 2);
       ctx.font = font(700, p.size);
-      // Soft white halo keeps popups legible over any pastel.
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      // Dark halo keeps popups legible over stars and glows.
+      ctx.strokeStyle = 'rgba(12,10,29,0.75)';
       ctx.lineWidth = 4;
       ctx.strokeText(p.text, p.x, p.y);
       ctx.fillStyle = p.color;
@@ -725,94 +714,57 @@ export class Iman implements MiniGame {
     this.drawHud();
   }
 
-  /** Pastel dawn: sky gradient, pale sun, isometric towers at the edges, mist, drifting motes. */
+  /** Night sky: deep indigo gradient, two faint nebulae and twinkling stars. */
   private drawScenery(active: boolean) {
     const { ctx } = this;
     const sky = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-    sky.addColorStop(0, '#f8ede3');
-    sky.addColorStop(0.55, '#f3d8d2');
-    sky.addColorStop(1, '#e3c0cc');
+    sky.addColorStop(0, '#0c0a1d');
+    sky.addColorStop(0.6, '#171233');
+    sky.addColorStop(1, '#241a3d');
     ctx.fillStyle = sky;
     ctx.fillRect(-20, -20, WIDTH + 40, HEIGHT + 40);
 
-    ctx.fillStyle = 'rgba(255,249,240,0.9)';
-    ctx.beginPath();
-    ctx.arc(272, 128, 42, 0, Math.PI * 2);
-    ctx.fill();
+    for (const [x, y, rad, color] of NEBULAE) {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
+      g.addColorStop(0, color);
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
 
-    for (const b of FAR_TOWERS) this.drawBlock(b);
-    const mist = ctx.createLinearGradient(0, 430, 0, HEIGHT);
-    mist.addColorStop(0, 'rgba(255,255,255,0)');
-    mist.addColorStop(1, 'rgba(255,255,255,0.55)');
-    ctx.fillStyle = mist;
-    ctx.fillRect(-20, 430, WIDTH + 40, HEIGHT - 410);
-    for (const b of NEAR_TOWERS) this.drawBlock(b);
-
-    // Holding the magnet brightens the air around the core.
+    // Holding the magnet lifts the light around the core a little.
     if (active) {
       const glow = ctx.createRadialGradient(CX, CY, 0, CX, CY, this.fieldRadius);
-      glow.addColorStop(0, 'rgba(255,255,255,0.35)');
-      glow.addColorStop(1, 'rgba(255,255,255,0)');
+      glow.addColorStop(0, 'rgba(170,150,255,0.14)');
+      glow.addColorStop(1, 'rgba(170,150,255,0)');
       ctx.fillStyle = glow;
       ctx.fillRect(-20, -20, WIDTH + 40, HEIGHT + 40);
     }
 
-    // Motes of light drifting up, on fixed lanes so they cost nothing to track.
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-    for (let i = 0; i < 18; i++) {
-      const x = ((i * 53) % WIDTH) + Math.sin(this.clock * 0.6 + i) * 10;
-      const y = HEIGHT - ((this.clock * (8 + (i % 5) * 3) + i * 71) % (HEIGHT + 20));
-      ctx.fillRect(x, y, i % 3 === 0 ? 3 : 2, i % 3 === 0 ? 3 : 2);
-    }
-  }
-
-  /** Isometric prism: lit top, mid left face, shaded right face, optional windows and roof. */
-  private drawBlock(b: Block) {
-    const { ctx } = this;
-    const { x, base, w, h } = b;
-    const top = base - h;
-    const [cTop, cLeft, cRight] = BLOCK_TONES[b.tone];
-    const poly = (pts: number[][], color: string) => {
-      ctx.fillStyle = color;
+    ctx.fillStyle = '#ffffff';
+    for (const s of STARS) {
+      ctx.globalAlpha = 0.25 + 0.5 * (0.5 + 0.5 * Math.sin(this.clock * s.speed + s.phase));
+      if (s.size < 2.5) {
+        ctx.fillRect(s.x, s.y, s.size, s.size);
+        continue;
+      }
+      // Four-point sparkle: two thin diamonds crossed.
+      const l = s.size * 2.2;
+      const t = s.size * 0.35;
       ctx.beginPath();
-      pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+      ctx.moveTo(s.x, s.y - l);
+      ctx.lineTo(s.x + t, s.y);
+      ctx.lineTo(s.x, s.y + l);
+      ctx.lineTo(s.x - t, s.y);
       ctx.closePath();
-      ctx.fill();
-    };
-    poly([[x - w, top], [x, top + w / 2], [x, base + w / 2], [x - w, base]], cLeft);
-    poly([[x, top + w / 2], [x + w, top], [x + w, base], [x, base + w / 2]], cRight);
-    poly([[x, top - w / 2], [x + w, top], [x, top + w / 2], [x - w, top]], cTop);
-
-    for (let i = 0; i < (b.windows ?? 0); i++) {
-      // Slit windows sit on the left face, following its slant.
-      const wx = x - w / 2;
-      const wy = top + 18 + i * 26 + w / 4;
-      ctx.fillStyle = 'rgba(79,59,86,0.45)';
-      ctx.beginPath();
-      ctx.moveTo(wx - 2.5, wy + 10);
-      ctx.lineTo(wx - 2.5, wy + 2);
-      ctx.arc(wx, wy + 2, 2.5, Math.PI, 0);
-      ctx.lineTo(wx + 2.5, wy + 11);
+      ctx.moveTo(s.x - l, s.y);
+      ctx.lineTo(s.x, s.y - t);
+      ctx.lineTo(s.x + l, s.y);
+      ctx.lineTo(s.x, s.y + t);
       ctx.closePath();
       ctx.fill();
     }
-
-    if (b.roof === 'dome') {
-      const rr = w * 0.55;
-      ctx.fillStyle = '#f6dc9c';
-      ctx.beginPath();
-      ctx.arc(x, top, rr, Math.PI, Math.PI * 1.5);
-      ctx.lineTo(x, top);
-      ctx.fill();
-      ctx.fillStyle = '#e2bd6a';
-      ctx.beginPath();
-      ctx.arc(x, top, rr, Math.PI * 1.5, 0);
-      ctx.lineTo(x, top);
-      ctx.fill();
-    } else if (b.roof === 'cone') {
-      poly([[x - w * 0.8, top], [x, top - w * 1.7], [x, top + w * 0.4]], '#f6dc9c');
-      poly([[x, top + w * 0.4], [x, top - w * 1.7], [x + w * 0.8, top]], '#e2bd6a');
-    }
+    ctx.globalAlpha = 1;
   }
 
   private drawField(active: boolean) {
@@ -821,7 +773,7 @@ export class Iman implements MiniGame {
     ctx.save();
     ctx.lineWidth = 1.5;
     ctx.setLineDash([3, 7]);
-    ctx.strokeStyle = `rgba(79,59,86,${active ? 0.35 : 0.12})`;
+    ctx.strokeStyle = `rgba(200,190,255,${active ? 0.35 : 0.12})`;
     ctx.beginPath();
     ctx.arc(CX, CY, field, 0, Math.PI * 2);
     ctx.stroke();
@@ -842,25 +794,15 @@ export class Iman implements MiniGame {
     this.drawItem(b.kind, b.x, b.y, b.spin);
   }
 
-  /** Soft contact shadow under floating things. */
-  private drawShadow(x: number, y: number, r: number) {
-    const { ctx } = this;
-    ctx.fillStyle = 'rgba(79,59,86,0.12)';
-    ctx.beginPath();
-    ctx.ellipse(x, y, r, r * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   /** Round pickups: white bubble, or a pizza whose pastel slices cycle colors. */
   private drawShieldIcon(kind: ShieldKind, x: number, y: number, spin: number) {
     const { ctx } = this;
     const r = KINDS[kind].r;
-    this.drawShadow(x, y + r + 5, r * 0.8);
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(spin);
     if (kind === 'shield') {
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.fill();
@@ -886,14 +828,10 @@ export class Iman implements MiniGame {
     }
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2.5;
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.stroke();
-    // Faint ink rim so white reads against the pale sky.
-    ctx.strokeStyle = 'rgba(79,59,86,0.3)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(0, 0, r + 1.8, 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
     // Glint stays put while the bubble spins.
@@ -909,15 +847,8 @@ export class Iman implements MiniGame {
     const { ctx } = this;
     const k = KINDS[kind];
     const r = k.r;
-    this.drawShadow(x, y + r * 1.3 + 5, r * 0.7);
-
-    // Gems turn on their vertical axis: squash the width and swap which side is lit.
-    const turn = Math.cos(spin);
-    const sx = Math.max(0.3, Math.abs(turn));
-    const [litSide, darkSide] = turn >= 0 ? [k.light, k.dark] : [k.dark, k.light];
     ctx.save();
     ctx.translate(x, y);
-    ctx.scale(sx, 1);
     const tri = (pts: number[][], color: string) => {
       ctx.fillStyle = color;
       ctx.beginPath();
@@ -925,18 +856,20 @@ export class Iman implements MiniGame {
       ctx.closePath();
       ctx.fill();
     };
-    tri([[0, -r * 1.3], [-r, 0], [0, 0]], litSide);
-    tri([[0, -r * 1.3], [r, 0], [0, 0]], k.color);
-    tri([[-r, 0], [0, r * 1.3], [0, 0]], k.color);
-    tri([[r, 0], [0, r * 1.3], [0, 0]], darkSide);
+    // Soft glow from the whole silhouette, then crisp flat facets on top (no spin).
+    ctx.shadowColor = k.color;
+    ctx.shadowBlur = 6 + k.load * 3;
+    tri([[0, -r * 1.3], [r, 0], [0, r * 1.3], [-r, 0]], k.color);
+    ctx.shadowBlur = 0;
+    tri([[0, -r * 1.3], [-r, 0], [0, 0]], k.light);
+    tri([[r, 0], [0, r * 1.3], [0, 0]], k.dark);
     ctx.restore();
   }
 
-  /** Mines: deep plum star with a coral heart that throbs. */
+  /** Mines: red spiked body with a white heart that throbs. */
   private drawMine(x: number, y: number, spin: number) {
     const { ctx } = this;
     const k = KINDS.mine;
-    this.drawShadow(x, y + k.r + 8, k.r * 0.8);
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(spin);
@@ -950,15 +883,18 @@ export class Iman implements MiniGame {
     }
     ctx.closePath();
     ctx.fillStyle = k.color;
+    ctx.shadowColor = k.color;
+    ctx.shadowBlur = 12;
     ctx.fill();
+    ctx.shadowBlur = 0;
     // Flat-shade the lower-right half.
     ctx.fillStyle = k.dark;
     ctx.beginPath();
     ctx.arc(0, 0, k.r - 1, -Math.PI / 4, (Math.PI * 3) / 4);
     ctx.fill();
-    ctx.fillStyle = C.danger;
+    ctx.fillStyle = C.white;
     ctx.beginPath();
-    ctx.arc(0, 0, k.r * 0.42 * pulse, 0, Math.PI * 2);
+    ctx.arc(0, 0, k.r * 0.48 * pulse, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -976,18 +912,15 @@ export class Iman implements MiniGame {
       // Both bubbles are white on the core; only the pizza pickup cycles colors.
       const a0 = (i / n) * Math.PI * 2 + gap;
       const a1 = ((i + 1) / n) * Math.PI * 2 - gap;
-      ctx.fillStyle = 'rgba(255,255,255,0.28)';
+      ctx.fillStyle = 'rgba(255,255,255,0.1)';
       ctx.beginPath();
       ctx.moveTo(CX, CY);
       ctx.arc(CX, CY, R, a0, a1);
       ctx.closePath();
       ctx.fill();
-      ctx.strokeStyle = 'rgba(79,59,86,0.25)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(CX, CY, R + 2.5, a0, a1);
-      ctx.stroke();
       ctx.strokeStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 8;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(CX, CY, R, a0, a1);
@@ -996,25 +929,21 @@ export class Iman implements MiniGame {
     ctx.restore();
   }
 
-  /** The core is an isometric cube: lit top, mid left, shaded right. */
+  /** The core: a pastel orb that glows brighter as it fills, toned by its cash-out tier. */
   private drawCore(active: boolean) {
     const { ctx } = this;
     const ti = this.tierIndex;
     const tier = TIERS[ti];
     const r = this.coreR * (1 + this.corePop * 0.2 + (active ? 0.06 : 0));
 
-    this.drawShadow(CX, CY + r + 10, r * 0.9);
-    const v = (deg: number) => [CX + Math.cos((deg * Math.PI) / 180) * r, CY + Math.sin((deg * Math.PI) / 180) * r];
-    const poly = (pts: number[][], color: string) => {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-      ctx.closePath();
-      ctx.fill();
-    };
-    poly([v(-90), v(-30), [CX, CY], v(210)], tier.top);
-    poly([[CX, CY], v(-30), v(30), v(90)], tier.right);
-    poly([[CX, CY], v(90), v(150), v(210)], tier.left);
+    ctx.save();
+    ctx.shadowColor = active ? '#b9a8ff' : tier.left;
+    ctx.shadowBlur = 16 + this.growth * 30;
+    ctx.fillStyle = tier.top;
+    ctx.beginPath();
+    ctx.arc(CX, CY, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
 
     this.drawShieldBubble();
     // Labels under the core clear the shield bubble when there is one.
@@ -1038,11 +967,7 @@ export class Iman implements MiniGame {
     if (this.bank > 0) {
       ctx.textBaseline = 'middle';
       ctx.font = font(700, Math.max(11, Math.round(r * 0.72)));
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 4;
-      ctx.strokeText(String(this.bank), CX, CY + 2);
-      ctx.fillStyle = C.ink;
+      ctx.fillStyle = C.onPastel;
       ctx.fillText(String(this.bank), CX, CY + 2);
       ctx.textBaseline = 'alphabetic';
       if (tier.mult > 1) {
@@ -1067,7 +992,7 @@ export class Iman implements MiniGame {
     const x = MUTE_BTN.x + 12;
     const y = MUTE_BTN.y + MUTE_BTN.h / 2;
     ctx.save();
-    ctx.fillStyle = ctx.strokeStyle = isMuted() ? 'rgba(79,59,86,0.35)' : C.inkSoft;
+    ctx.fillStyle = ctx.strokeStyle = isMuted() ? 'rgba(255,255,255,0.3)' : C.inkSoft;
     ctx.lineWidth = 2;
     ctx.lineCap = 'round';
     ctx.beginPath();
@@ -1145,14 +1070,14 @@ export class Iman implements MiniGame {
 
       // Weight bar fills in, so pink visibly lands right next to the mine.
       const fill = (k.mass / maxMass) * Math.min(1, t * 2);
-      ctx.fillStyle = 'rgba(79,59,86,0.12)';
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
       ctx.fillRect(barX, y - 3, barW, 6);
-      ctx.fillStyle = kind === 'mine' ? C.ink : k.color;
+      ctx.fillStyle = k.color;
       ctx.fillRect(barX, y - 3, barW * fill, 6);
 
       ctx.textAlign = 'right';
       ctx.font = font(700, kind === 'mine' ? 13 : 19);
-      ctx.fillStyle = kind === 'mine' ? C.danger : k.dark;
+      ctx.fillStyle = kind === 'mine' ? C.danger : k.light;
       ctx.fillText(kind === 'mine' ? '¡PERDÉS!' : `+${k.value}`, 332, y + 7);
     });
     ctx.globalAlpha = 1;
@@ -1195,7 +1120,7 @@ export class Iman implements MiniGame {
     ctx.globalAlpha = alpha;
     ctx.translate(CX, 150);
     ctx.scale(scale, scale);
-    ctx.fillStyle = p.intro ? KINDS[p.intro].dark : C.danger;
+    ctx.fillStyle = p.intro ? KINDS[p.intro].light : C.danger;
     ctx.font = font(700, 28);
     ctx.fillText(p.title, 0, 0);
     if (p.intro) {
@@ -1241,7 +1166,7 @@ export class Iman implements MiniGame {
     if (this.state === 'playing') this.drawPhase();
 
     if (this.state === 'over') {
-      ctx.fillStyle = 'rgba(248,237,227,0.78)';
+      ctx.fillStyle = 'rgba(12,10,29,0.72)';
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 66);
