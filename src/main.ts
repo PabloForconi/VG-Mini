@@ -1,11 +1,19 @@
 import './style.css';
 import { startLoop } from './engine/loop';
-import { Iman } from './games/iman';
+import { Growcore } from './games/growcore';
 import { HEIGHT, WIDTH, type MiniGame } from './games/MiniGame';
 
-/** Each minigame is picked by URL hash, e.g. localhost:5173/#iman. */
-const games: Record<string, (ctx: CanvasRenderingContext2D) => MiniGame> = {
-  iman: (ctx) => new Iman(ctx),
+interface GameEntry {
+  title: string; // browser tab title
+  make: (ctx: CanvasRenderingContext2D) => MiniGame;
+}
+
+const growcore: GameEntry = { title: 'Growcore', make: (ctx) => new Growcore(ctx) };
+
+/** Each minigame is picked by URL hash, e.g. localhost:5173/#growcore. */
+const games: Record<string, GameEntry> = {
+  growcore,
+  iman: growcore, // pre-rename links keep working
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
@@ -23,7 +31,9 @@ function fit() {
 fit();
 window.addEventListener('resize', fit);
 
-const game = (games[location.hash.slice(1)] ?? games.iman)(ctx);
+const entry = games[location.hash.slice(1)] ?? growcore;
+document.title = entry.title;
+const game = entry.make(ctx);
 // Handy for poking at state from the console; stripped from production builds.
 if (import.meta.env.DEV) Object.assign(window, { game });
 startLoop(

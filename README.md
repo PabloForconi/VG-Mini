@@ -14,13 +14,13 @@ npm run build    # chequeo de tipos + build a dist/
 npm run preview  # sirve el build
 ```
 
-Cada minijuego se elige por hash en la URL, p. ej. `http://localhost:5173/#iman`.
+Cada minijuego se elige por hash en la URL, p. ej. `http://localhost:5173/#growcore`.
 
 ## Juegos
 
 | Juego | Idea | Diseño |
 | --- | --- | --- |
-| `iman` | Atraé gemas, el núcleo crece; tocalo para cobrar antes de que una mina se lleve todo. | [docs/iman.md](docs/iman.md) |
+| `growcore` | **Growcore**: atraé gemas, el núcleo crece; tocalo para cobrar antes de que una mina se lleve todo. | [docs/growcore.md](docs/growcore.md) |
 
 ## Estructura
 

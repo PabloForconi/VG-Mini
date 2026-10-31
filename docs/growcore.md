@@ -1,4 +1,4 @@
-# IMÁN — documento de diseño
+# GROWCORE — documento de diseño
 
 > Mantené presionado para atraer. Tocá el núcleo para cobrar. Si te toca una mina, perdés lo que no cobraste.
 
@@ -99,7 +99,7 @@ edilicias.**
 - **Texto**: Josefin Sans en tonos claros, títulos con espaciado amplio.
 
 Los colores están en `C`, `KINDS` y `TIERS` de
-[`src/games/iman.ts`](../src/games/iman.ts); el cielo en `STARS` y `NEBULAE`.
+[`src/games/growcore.ts`](../src/games/growcore.ts); el cielo en `STARS` y `NEBULAE`.
 
 ## Por qué engancha
 
@@ -171,7 +171,7 @@ más caro en celular). Los brillos se simulan con una forma translúcida detrás
 
 ## Valores de ajuste
 
-Todo está arriba de [`src/games/iman.ts`](../src/games/iman.ts). Los más
+Todo está arriba de [`src/games/growcore.ts`](../src/games/growcore.ts). Los más
 importantes para el feel:
 
 - `mass` de cada gema vs la mina en `KINDS`: la brecha de masa *es* el juego.

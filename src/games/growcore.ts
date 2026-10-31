@@ -4,13 +4,14 @@ import { loadNumber, saveNumber } from '../engine/storage';
 import { HEIGHT, WIDTH, type MiniGame } from './MiniGame';
 
 /**
- * IMÁN — hold to pull everything toward the core.
- * Light crystals answer the pull fast, heavy mines slowly. Caught crystals
- * are stored in the core, which grows (bigger target for mines, stronger
- * pull). Tap the core to cash out: the bigger the load, the bigger the
- * multiplier. A mine hit loses everything not cashed.
+ * GROWCORE — hold to pull everything toward the core.
+ * Light gems answer the pull fast, heavy mines slowly. Caught gems are
+ * stored in the core, which grows (bigger target for mines, stronger pull).
+ * Tap the core to cash out: the bigger the load, the bigger the multiplier.
+ * A mine hit loses everything not cashed.
  */
 
+const TITLE = 'GROWCORE';
 const CX = WIDTH / 2;
 const CY = HEIGHT / 2;
 
@@ -345,7 +346,7 @@ type State = 'ready' | 'playing' | 'over';
 
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
-export class Iman implements MiniGame {
+export class Growcore implements MiniGame {
   private state: State = 'ready';
   private bodies: Body[] = [];
   private particles: Particle[] = [];
@@ -369,7 +370,8 @@ export class Iman implements MiniGame {
   private coreR = T.coreRadius; // drawn/collision radius, eases toward target
   private lost = 0; // what the last death threw away
   // No best score or coin wallet across runs until they have something to buy/beat.
-  private cashedOnce = loadNumber('iman.cashedOnce') === 1;
+  // Falls back to the pre-rename key so returning players don't see the hint again.
+  private cashedOnce = loadNumber('growcore.cashedOnce') === 1 || loadNumber('iman.cashedOnce') === 1;
   private holding = false;
   private holdBlocked = false; // a press that cashed out shouldn't also pull
   private overAt = 0;
@@ -735,7 +737,7 @@ export class Iman implements MiniGame {
     this.load = 0;
     if (!this.cashedOnce) {
       this.cashedOnce = true;
-      saveNumber('iman.cashedOnce', 1);
+      saveNumber('growcore.cashedOnce', 1);
     }
   }
 
@@ -1132,9 +1134,12 @@ export class Iman implements MiniGame {
     const { ctx } = this;
     ctx.textAlign = 'center';
     ctx.fillStyle = C.ink;
-    ctx.font = font(700, 58);
-    this.spaced(10);
-    ctx.fillText('IMÁN', CX + 5, 106);
+    // Shrink the wide-tracked title until it fits, whatever the font metrics on the device.
+    let size = 50;
+    while (size > 30 && this.measure(TITLE, font(700, size), size * 0.14) > WIDTH - 40) size -= 2;
+    ctx.font = font(700, size);
+    this.spaced(size * 0.14);
+    ctx.fillText(TITLE, CX + size * 0.07, 104);
     this.spaced(0);
     ctx.font = font(400, 15);
     ctx.fillStyle = C.inkSoft;
