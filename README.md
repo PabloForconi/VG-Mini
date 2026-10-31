@@ -3,6 +3,8 @@
 Laboratorio de minijuegos web rápidos (TypeScript + Vite, `<canvas>` 2D) para
 probar mecánicas antes de invertir en producción.
 
+**Jugar:** https://pabloforconi.github.io/VG-Mini/ (se publica solo con cada push a `main`).
+
 ## Uso
 
 ```bash
