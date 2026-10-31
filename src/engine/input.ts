@@ -23,6 +23,14 @@ window.addEventListener('pointerdown', (e) => {
 window.addEventListener('pointerup', () => (pointerDown = false));
 window.addEventListener('pointercancel', () => (pointerDown = false));
 window.addEventListener('contextmenu', (e) => e.preventDefault());
+
+// iOS Safari ignores user-scalable=no and still turns quick double taps into
+// zoom or the text-selection loupe. Cancelling the native touch gestures stops
+// that; pointer events (what the game reads) are dispatched separately and still fire.
+const block = (e: Event) => e.preventDefault();
+for (const type of ['touchstart', 'touchend', 'touchmove', 'gesturestart', 'dblclick', 'selectstart']) {
+  document.addEventListener(type, block, { passive: false });
+}
 window.addEventListener('blur', () => {
   down.clear();
   pointerDown = false;

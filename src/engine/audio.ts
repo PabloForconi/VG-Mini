@@ -20,6 +20,8 @@ function unlock() {
   if (ac.state === 'suspended') void ac.resume();
 }
 window.addEventListener('pointerdown', unlock);
+// Older iOS only grants audio on touchend; input.ts cancels its default, but it still bubbles here.
+window.addEventListener('touchend', unlock);
 window.addEventListener('keydown', (e) => {
   unlock();
   if (e.code === 'KeyM') setMuted(!muted);
