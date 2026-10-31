@@ -104,6 +104,21 @@ const SHIELD_SLICES: Record<ShieldKind, number> = { shield: 1, pizza: 6 };
 
 const isShield = (k: Kind): k is ShieldKind => k === 'shield' || k === 'pizza';
 
+/**
+ * Colors the pizza pickup cycles through (RGB): white, pink, yellow, green,
+ * sky blue, lilac. Ordered so neighbors blend through clean colors (pink →
+ * green directly would pass through a muddy gray).
+ */
+const PIZZA_COLORS: [number, number, number][] = [
+  [255, 255, 255],
+  [246, 168, 196],
+  [246, 210, 126],
+  [159, 224, 180],
+  [159, 212, 242],
+  [199, 179, 227],
+];
+const PIZZA_COLOR_SECONDS = 1.1; // per color
+
 /** Order shown on the start screen legend. */
 const LEGEND: Kind[] = ['cyan', 'yellow', 'pink', 'mine'];
 
@@ -312,8 +327,16 @@ export class Iman implements MiniGame {
     return true;
   }
 
-  private sliceColor(i: number) {
-    return `hsl(${(this.clock * 90 + i * 60) % 360}, 62%, 76%)`;
+  /** The pizza pickup is one flat color that eases through PIZZA_COLORS in a loop. */
+  private pizzaColor() {
+    const t = (this.clock / PIZZA_COLOR_SECONDS) % PIZZA_COLORS.length;
+    const i = Math.floor(t);
+    const a = PIZZA_COLORS[i];
+    const b = PIZZA_COLORS[(i + 1) % PIZZA_COLORS.length];
+    const f = t - i;
+    const e = f * f * (3 - 2 * f); // smoothstep: linger on each color, glide between
+    const mix = (k: number) => Math.round(a[k] + (b[k] - a[k]) * e);
+    return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
   }
 
   private targetCoreR() {
@@ -808,15 +831,12 @@ export class Iman implements MiniGame {
       ctx.fill();
     } else {
       const n = SHIELD_SLICES.pizza;
-      for (let i = 0; i < n; i++) {
-        ctx.fillStyle = this.sliceColor(i);
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.arc(0, 0, r, (i / n) * Math.PI * 2, ((i + 1) / n) * Math.PI * 2);
-        ctx.closePath();
-        ctx.fill();
-      }
-      ctx.strokeStyle = '#ffffff';
+      ctx.fillStyle = this.pizzaColor();
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.fill();
+      // Thin cuts mark it as the slice shield, even when its color passes through white.
+      ctx.strokeStyle = 'rgba(12,10,29,0.35)';
       ctx.lineWidth = 1.2;
       for (let i = 0; i < n; i++) {
         const a = (i / n) * Math.PI * 2;
