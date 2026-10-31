@@ -1,6 +1,6 @@
 import { Drone, isMuted, noise, setMuted, tone, vibrate } from '../engine/audio';
 import { isHolding, pointer, takePress } from '../engine/input';
-import { loadNumber, saveNumber } from '../engine/storage';
+import { loadJSON, loadNumber, saveJSON, saveNumber } from '../engine/storage';
 import { HEIGHT, WIDTH, type MiniGame } from './MiniGame';
 
 /**
@@ -12,6 +12,17 @@ import { HEIGHT, WIDTH, type MiniGame } from './MiniGame';
  */
 
 const TITLE = 'GROWCORE';
+
+/** Start-screen copy. Lines wrap automatically to the screen width. */
+const START_RULES: { text: string; warn?: boolean }[] = [
+  { text: 'Mantené presionado para atraer.' },
+  { text: 'Tocá el núcleo para liberar la carga y sumar puntos.' },
+  { text: '¡Cuidado con las bombas! Si las atraés, perdés todo lo acumulado.', warn: true },
+];
+const START_TIPS = [
+  'Cuanto más pesa, más tarda en llegar... ¡pero más puntos vale!',
+  '¡Cuanta más carga acumules, mayor será el multiplicador!',
+];
 const CX = WIDTH / 2;
 const CY = HEIGHT / 2;
 
@@ -54,6 +65,7 @@ const C = {
   gold: '#f2c46d',
   white: '#ffffff',
 };
+const T_MINT = '#8fd8c9'; // "this run" highlight on the results ladder
 const font = (weight: number, size: number) => `${weight} ${size}px "Josefin Sans", system-ui, sans-serif`;
 
 interface KindDef {
@@ -77,7 +89,7 @@ const KINDS: Record<Kind, KindDef> = {
   cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#7fcabc', light: '#b2e6dc', dark: '#4f9e91', name: 'Gema celeste' },
   yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ecc56a', light: '#f8e1a0', dark: '#c4922f', name: 'Gema amarilla' },
   pink: { r: 11, mass: 3, value: 15, load: 3, color: '#e894a8', light: '#f6bfcb', dark: '#c4637c', name: 'Gema rosa' },
-  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#f2565c', light: '#ff8a80', dark: '#a52834', name: 'Mina' },
+  mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#f2565c', light: '#ff8a80', dark: '#a52834', name: 'Bomba' },
   shield: {
     r: 11,
     mass: 3.2,
@@ -87,7 +99,7 @@ const KINDS: Record<Kind, KindDef> = {
     light: '#ffffff',
     dark: '#8c7591',
     name: 'Escudo',
-    blurb: 'Aguanta 1 mina',
+    blurb: 'Aguanta 1 bomba',
   },
   pizza: {
     r: 11,
@@ -98,7 +110,7 @@ const KINDS: Record<Kind, KindDef> = {
     light: '#e3d7f2',
     dark: '#8a6fb3',
     name: 'Escudo pizza',
-    blurb: 'Cada mina rompe solo 1 porción',
+    blurb: 'Cada bomba rompe solo 1 porción',
   },
 };
 
@@ -108,19 +120,19 @@ const SHIELD_SLICES: Record<ShieldKind, number> = { shield: 1, pizza: 6 };
 const isShield = (k: Kind): k is ShieldKind => k === 'shield' || k === 'pizza';
 
 /**
- * Colors the pizza pickup cycles through (RGB): white, pink, yellow, green,
- * sky blue, lilac. Ordered so neighbors blend through clean colors (pink →
- * green directly would pass through a muddy gray).
+ * Colors the pizza pickup cycles through (RGB): pink, yellow, green, sky
+ * blue, lilac. No white, so it never looks like the plain shield. Ordered so
+ * neighbors blend through clean colors (pink → green directly would pass
+ * through a muddy gray).
  */
 const PIZZA_COLORS: [number, number, number][] = [
-  [255, 255, 255],
   [246, 168, 196],
   [246, 210, 126],
   [159, 224, 180],
   [159, 212, 242],
   [199, 179, 227],
 ];
-const PIZZA_COLOR_SECONDS = 1.1; // per color
+const PIZZA_COLOR_SECONDS = 0.55; // per color
 
 /** Order shown on the start screen legend. */
 const LEGEND: Kind[] = ['cyan', 'yellow', 'pink', 'mine'];
@@ -282,6 +294,109 @@ function buildMineSprites(px: number): HTMLCanvasElement[] {
   });
 }
 
+/** Glow size around a gem, in device px (canvas shadowBlur ignores transforms). */
+const gemBlur = (kind: Kind) => 6 + KINDS[kind].load * 3;
+
+/** Half-size of a gem sprite in logical px: the diamond plus room for its glow. */
+const gemExtent = (kind: Kind) => Math.ceil(KINDS[kind].r * 1.3 + gemBlur(kind) + 2);
+
+/**
+ * Bakes one gem: soft glow from the whole silhouette, then flat facets on top.
+ * The blur is paid once here instead of every frame.
+ */
+function buildGemSprite(kind: Kind, px: number): HTMLCanvasElement {
+  const k = KINDS[kind];
+  const r = k.r;
+  const e = gemExtent(kind);
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = Math.ceil(e * 2 * px);
+  const g = cv.getContext('2d')!;
+  g.translate(cv.width / 2, cv.height / 2);
+  g.scale(px, px);
+  const tri = (pts: number[][], color: string) => {
+    g.fillStyle = color;
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    g.fill();
+  };
+  g.shadowColor = k.color;
+  g.shadowBlur = gemBlur(kind) * px;
+  tri([[0, -r * 1.3], [r, 0], [0, r * 1.3], [-r, 0]], k.color);
+  g.shadowBlur = 0;
+  tri([[0, -r * 1.3], [-r, 0], [0, 0]], k.light);
+  tri([[r, 0], [0, r * 1.3], [0, 0]], k.dark);
+  return cv;
+}
+
+const CORE_GLOW_R = 64; // baked size; a soft radial glow scales cleanly
+
+/** Radial glow in `color`, fading to nothing at the sprite edge. Drawn scaled behind the core. */
+function buildCoreGlow(color: string): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = CORE_GLOW_R * 2;
+  const g = cv.getContext('2d')!;
+  const grad = g.createRadialGradient(CORE_GLOW_R, CORE_GLOW_R, 0, CORE_GLOW_R, CORE_GLOW_R, CORE_GLOW_R);
+  grad.addColorStop(0, color);
+  grad.addColorStop(0.45, color);
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  g.globalAlpha = 0.55;
+  g.fillStyle = grad;
+  g.fillRect(0, 0, CORE_GLOW_R * 2, CORE_GLOW_R * 2);
+  return cv;
+}
+
+/** Particle vortex around the core: cheap (one tiny rect per mote, no blur). */
+const VORTEX = {
+  count: 48,
+  idle: 0.45, // fall cycles per second when not pulling
+  pull: 1.2, // … and while the magnet is held
+  reach: 58, // px from the core edge where motes appear
+  growReach: 30, // extra reach at max core size
+  curl: 4.2, // radians a mote turns on its way in
+  colors: ['#9b7bff', '#5ad1ff', '#e38bff'],
+};
+
+const SKY_MARGIN = 20; // baked past the screen edges so screen shake never shows a seam
+const GLOW_R = 128; // baked glow radius; a soft gradient scales up cleanly to the field size
+
+/** Sky gradient + nebulae, painted once at `px` device pixels per logical px. */
+function buildSky(px: number): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil((WIDTH + SKY_MARGIN * 2) * px);
+  cv.height = Math.ceil((HEIGHT + SKY_MARGIN * 2) * px);
+  const g = cv.getContext('2d')!;
+  g.scale(px, px);
+  g.translate(SKY_MARGIN, SKY_MARGIN);
+  const sky = g.createLinearGradient(0, 0, 0, HEIGHT);
+  sky.addColorStop(0, '#0c0a1d');
+  sky.addColorStop(0.6, '#171233');
+  sky.addColorStop(1, '#241a3d');
+  g.fillStyle = sky;
+  g.fillRect(-SKY_MARGIN, -SKY_MARGIN, WIDTH + SKY_MARGIN * 2, HEIGHT + SKY_MARGIN * 2);
+  for (const [x, y, rad, color] of NEBULAE) {
+    const n = g.createRadialGradient(x, y, 0, x, y, rad);
+    n.addColorStop(0, color);
+    n.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = n;
+    g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
+  return cv;
+}
+
+/** Soft violet glow shown around the core while the magnet is held. */
+function buildGlow(): HTMLCanvasElement {
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = GLOW_R * 2;
+  const g = cv.getContext('2d')!;
+  const glow = g.createRadialGradient(GLOW_R, GLOW_R, 0, GLOW_R, GLOW_R, GLOW_R);
+  glow.addColorStop(0, 'rgba(170,150,255,0.14)');
+  glow.addColorStop(1, 'rgba(170,150,255,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, GLOW_R * 2, GLOW_R * 2);
+  return cv;
+}
+
 /** [x, y, radius, inner color]: barely-there haze so the sky isn't flat. */
 const NEBULAE: [number, number, number, string][] = [
   [60, 150, 220, 'rgba(90,200,190,0.10)'],
@@ -344,6 +459,25 @@ interface Popup {
 
 type State = 'ready' | 'playing' | 'over';
 
+/** A finished run on the local board: points, coins, when (ms epoch). */
+interface Run {
+  p: number;
+  m: number;
+  t: number;
+}
+
+/** Where a run landed: its position, the runs right above and below, and the best before it. */
+interface RunResult {
+  pos: number;
+  total: number;
+  above: Run | null;
+  below: Run | null;
+  prevBest: number;
+}
+
+const RUNS_KEY = 'growcore.runs';
+const MAX_RUNS = 200; // plenty for a personal board; keeps storage tiny
+
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 export class Growcore implements MiniGame {
@@ -356,6 +490,12 @@ export class Growcore implements MiniGame {
   private spawnTimer = 0;
   private phase = 0;
   private bag: Kind[] = [];
+  private sky: HTMLCanvasElement | null = null;
+  private glow: HTMLCanvasElement | null = null;
+  private skyPx = 0;
+  private gemSprites: Partial<Record<Kind, HTMLCanvasElement>> = {};
+  private gemSpritePx = 0;
+  private coreGlows = new Map<string, HTMLCanvasElement>();
   private mineSprites: HTMLCanvasElement[] = [];
   private mineSpritePx = 0;
   private mineStreak = 0; // consecutive mines dealt so far
@@ -368,8 +508,10 @@ export class Growcore implements MiniGame {
   private bank = 0; // points stored in the core, not yet cashed
   private load = 0; // what the core is carrying; drives size and tier
   private coreR = T.coreRadius; // drawn/collision radius, eases toward target
-  private lost = 0; // what the last death threw away
-  // No best score or coin wallet across runs until they have something to buy/beat.
+  private gems = 0; // gems sitting in the core, not yet cashed
+  private lostGems = 0; // what the last death threw away
+  private result: RunResult | null = null; // where the last run landed on the local board
+  // Every run starts at zero; finished runs go to a local board (see recordRun).
   // Falls back to the pre-rename key so returning players don't see the hint again.
   private cashedOnce = loadNumber('growcore.cashedOnce') === 1 || loadNumber('iman.cashedOnce') === 1;
   private holding = false;
@@ -378,6 +520,8 @@ export class Growcore implements MiniGame {
   private shake = 0;
   private corePop = 0;
   private holdTime = 0;
+  private vortexT = 0; // vortex phase; advances faster while the magnet is held
+  private vortexSpeed = VORTEX.idle;
   private hum = new Drone();
 
   constructor(private ctx: CanvasRenderingContext2D) {
@@ -487,6 +631,11 @@ export class Growcore implements MiniGame {
     const h = Math.min(this.holdTime, 2.5);
     this.hum.set(this.holdTime > 0 ? 0.05 + h * 0.025 : 0, 65 + h * 45);
 
+    // The vortex speeds up while pulling and eases back on release.
+    const vTarget = this.holdTime > 0 ? VORTEX.pull : VORTEX.idle;
+    this.vortexSpeed += (vTarget - this.vortexSpeed) * Math.min(1, dt * 4);
+    this.vortexT += dt * this.vortexSpeed;
+
     if (this.state !== 'playing' && press === 'pointer' && this.hitMute()) {
       setMuted(!isMuted());
       return;
@@ -588,7 +737,9 @@ export class Growcore implements MiniGame {
     this.shownScore = 0;
     this.bank = 0;
     this.load = 0;
-    this.lost = 0;
+    this.gems = 0;
+    this.lostGems = 0;
+    this.result = null;
     this.phase = 0;
     this.bag = [];
     this.mineStreak = 0;
@@ -687,6 +838,7 @@ export class Growcore implements MiniGame {
     }
     const tierBefore = this.tierIndex;
     this.bank += k.value;
+    this.gems++;
     this.load += k.load;
     this.corePop = 1;
     this.burst(CX, CY, k.color, 8 * k.load, 140);
@@ -735,6 +887,7 @@ export class Growcore implements MiniGame {
 
     this.bank = 0;
     this.load = 0;
+    this.gems = 0;
     if (!this.cashedOnce) {
       this.cashedOnce = true;
       saveNumber('growcore.cashedOnce', 1);
@@ -745,18 +898,39 @@ export class Growcore implements MiniGame {
     this.state = 'over';
     this.overAt = this.clock;
     this.shake = 0.5;
-    this.lost = this.bank * TIERS[this.tierIndex].mult;
+    this.lostGems = this.gems;
     this.burst(mine.x, mine.y, C.danger, 40, 260);
     this.burst(CX, CY, '#ffffff', 20 + this.load * 2, 180);
     this.bodies = this.bodies.filter((b) => !b.dead);
     this.bank = 0;
     this.load = 0;
+    this.gems = 0;
+    this.recordRun();
     noise(0.6, 0.5, 2000);
     tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
     vibrate([60, 40, 120]);
   }
 
-  /** Coins earned this run, derived from score (not saved anywhere yet). */
+  /** Saves this run to the local board (kept best-first) and works out where it landed. */
+  private recordRun() {
+    const runs = loadJSON<Run[]>(RUNS_KEY, []);
+    const prevBest = runs.length ? runs[0].p : 0;
+    const me: Run = { p: this.score, m: this.runCoins, t: Date.now() };
+    // Ties sort below older runs: to pass a score you have to beat it.
+    let i = runs.findIndex((r) => r.p < me.p);
+    if (i < 0) i = runs.length;
+    runs.splice(i, 0, me);
+    this.result = {
+      pos: i + 1,
+      total: runs.length,
+      above: runs[i - 1] ?? null,
+      below: runs[i + 1] ?? null,
+      prevBest,
+    };
+    saveJSON(RUNS_KEY, runs.slice(0, MAX_RUNS));
+  }
+
+  /** Coins earned this run, derived from score. */
   private get runCoins() {
     return Math.floor(this.score / T.pointsPerCoin);
   }
@@ -835,7 +1009,10 @@ export class Growcore implements MiniGame {
     }
     ctx.globalAlpha = 1;
 
-    if (this.state === 'playing') this.drawCore(active);
+    if (this.state === 'playing') {
+      this.drawVortex();
+      this.drawCore(active);
+    }
 
     ctx.textAlign = 'center';
     ctx.lineJoin = 'round';
@@ -858,28 +1035,20 @@ export class Growcore implements MiniGame {
   /** Night sky: deep indigo gradient, two faint nebulae and twinkling stars. */
   private drawScenery(active: boolean) {
     const { ctx } = this;
-    const sky = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-    sky.addColorStop(0, '#0c0a1d');
-    sky.addColorStop(0.6, '#171233');
-    sky.addColorStop(1, '#241a3d');
-    ctx.fillStyle = sky;
-    ctx.fillRect(-20, -20, WIDTH + 40, HEIGHT + 40);
-
-    for (const [x, y, rad, color] of NEBULAE) {
-      const g = ctx.createRadialGradient(x, y, 0, x, y, rad);
-      g.addColorStop(0, color);
-      g.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.fillStyle = g;
-      ctx.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    // Full-screen gradients are the priciest thing to paint every frame, so the sky
+    // and the magnet glow are baked once per pixel density and just copied.
+    const px = ctx.canvas.width / WIDTH;
+    if (px !== this.skyPx) {
+      this.sky = buildSky(px);
+      this.glow = buildGlow();
+      this.skyPx = px;
     }
+    ctx.drawImage(this.sky!, -SKY_MARGIN, -SKY_MARGIN, WIDTH + SKY_MARGIN * 2, HEIGHT + SKY_MARGIN * 2);
 
     // Holding the magnet lifts the light around the core a little.
     if (active) {
-      const glow = ctx.createRadialGradient(CX, CY, 0, CX, CY, this.fieldRadius);
-      glow.addColorStop(0, 'rgba(170,150,255,0.14)');
-      glow.addColorStop(1, 'rgba(170,150,255,0)');
-      ctx.fillStyle = glow;
-      ctx.fillRect(-20, -20, WIDTH + 40, HEIGHT + 40);
+      const r = this.fieldRadius;
+      ctx.drawImage(this.glow!, CX - r, CY - r, r * 2, r * 2);
     }
 
     ctx.fillStyle = '#ffffff';
@@ -904,6 +1073,23 @@ export class Growcore implements MiniGame {
       ctx.lineTo(s.x, s.y + t);
       ctx.closePath();
       ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  /** Motes of light spiralling into the core (drawn under it, so they vanish as they arrive). */
+  private drawVortex() {
+    const { ctx } = this;
+    const reach = VORTEX.reach + this.growth * VORTEX.growReach;
+    for (let i = 0; i < VORTEX.count; i++) {
+      const u = (this.vortexT + i / VORTEX.count) % 1; // 0 = outer edge … 1 = swallowed
+      const r = this.coreR + 2 + (1 - u) * reach;
+      // Golden-angle spread so motes never bunch up, curling tighter as they fall in.
+      const a = i * 2.39996 + u * VORTEX.curl + this.vortexT * 0.67;
+      ctx.globalAlpha = Math.min(1, u * 4) * Math.min(1, (1 - u) * 5) * 0.9;
+      ctx.fillStyle = VORTEX.colors[i % VORTEX.colors.length];
+      const s = 1.2 + u * 1.8;
+      ctx.fillRect(CX + Math.cos(a) * r - s / 2, CY + Math.sin(a) * r - s / 2, s, s);
     }
     ctx.globalAlpha = 1;
   }
@@ -935,7 +1121,7 @@ export class Growcore implements MiniGame {
     this.drawItem(b.kind, b.x, b.y, b.spin, b.tilt);
   }
 
-  /** Round pickups: white bubble, or a pizza whose pastel slices cycle colors. */
+  /** Round pickups: white bubble, or a pizza bubble tinted with a cycling pastel color. */
   private drawShieldIcon(kind: ShieldKind, x: number, y: number, spin: number) {
     const { ctx } = this;
     const r = KINDS[kind].r;
@@ -948,18 +1134,26 @@ export class Growcore implements MiniGame {
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.fill();
+    // Thin rim; a wide faint ring behind it stands in for a glow (no blur).
     ctx.strokeStyle = rim;
-    ctx.lineWidth = 2.5;
-    ctx.shadowColor = rim;
-    ctx.shadowBlur = 10;
+    ctx.globalAlpha = 0.18;
+    ctx.lineWidth = 5;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
     ctx.restore();
-    // Glint stays put while the bubble spins.
+    // A plain white gem inside, upright like the real gems (unaffected by the bubble's spin).
+    const d = r * 0.45;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
-    ctx.arc(x - r * 0.38, y - r * 0.38, r * 0.2, 0, Math.PI * 2);
+    ctx.moveTo(x, y - d);
+    ctx.lineTo(x + d, y);
+    ctx.lineTo(x, y + d);
+    ctx.lineTo(x - d, y);
+    ctx.closePath();
     ctx.fill();
   }
 
@@ -967,26 +1161,23 @@ export class Growcore implements MiniGame {
   private drawItem(kind: Kind, x: number, y: number, spin: number, tilt = 0) {
     if (isShield(kind)) return this.drawShieldIcon(kind, x, y, spin);
     if (kind === 'mine') return this.drawMine(x, y, spin);
+    // Gems: baked once per kind (glow included), then just copied, leaning by `tilt`.
     const { ctx } = this;
-    const k = KINDS[kind];
-    const r = k.r;
+    const px = ctx.canvas.width / WIDTH;
+    if (px !== this.gemSpritePx) {
+      this.gemSprites = {};
+      this.gemSpritePx = px;
+    }
+    const sprite = (this.gemSprites[kind] ??= buildGemSprite(kind, px));
+    const e = gemExtent(kind);
+    if (tilt === 0) {
+      ctx.drawImage(sprite, x - e, y - e, e * 2, e * 2);
+      return;
+    }
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(tilt);
-    const tri = (pts: number[][], color: string) => {
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
-      ctx.closePath();
-      ctx.fill();
-    };
-    // Soft glow from the whole silhouette, then crisp flat facets on top (no spin).
-    ctx.shadowColor = k.color;
-    ctx.shadowBlur = 6 + k.load * 3;
-    tri([[0, -r * 1.3], [r, 0], [0, r * 1.3], [-r, 0]], k.color);
-    ctx.shadowBlur = 0;
-    tri([[0, -r * 1.3], [-r, 0], [0, 0]], k.light);
-    tri([[r, 0], [0, r * 1.3], [0, 0]], k.dark);
+    ctx.drawImage(sprite, -e, -e, e * 2, e * 2);
     ctx.restore();
   }
 
@@ -1023,12 +1214,15 @@ export class Growcore implements MiniGame {
       ctx.arc(CX, CY, R, a0, a1);
       ctx.closePath();
       ctx.fill();
+      // Wide faint stroke behind a crisp one stands in for a glow (no blur).
       ctx.strokeStyle = '#ffffff';
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 8;
-      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.2;
+      ctx.lineWidth = 8;
       ctx.beginPath();
       ctx.arc(CX, CY, R, a0, a1);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 3;
       ctx.stroke();
     }
     ctx.restore();
@@ -1041,14 +1235,16 @@ export class Growcore implements MiniGame {
     const tier = TIERS[ti];
     const r = this.coreR * (1 + this.corePop * 0.2 + (active ? 0.06 : 0));
 
-    ctx.save();
-    ctx.shadowColor = active ? '#b9a8ff' : tier.left;
-    ctx.shadowBlur = 16 + this.growth * 30;
+    // Glow: a baked radial sprite per color, sized so it reaches past the core (no blur).
+    const glowColor = active ? '#b9a8ff' : tier.left;
+    let glow = this.coreGlows.get(glowColor);
+    if (!glow) this.coreGlows.set(glowColor, (glow = buildCoreGlow(glowColor)));
+    const gr = r + 16 + this.growth * 30;
+    ctx.drawImage(glow, CX - gr, CY - gr, gr * 2, gr * 2);
     ctx.fillStyle = tier.top;
     ctx.beginPath();
     ctx.arc(CX, CY, r, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
 
     this.drawShieldBubble();
     // Labels under the core clear the shield bubble when there is one.
@@ -1086,7 +1282,7 @@ export class Growcore implements MiniGame {
       ctx.globalAlpha = 0.6 + Math.sin(this.clock * 6) * 0.4;
       ctx.fillStyle = C.gold;
       ctx.font = font(700, 14);
-      ctx.fillText('TOCÁ EL NÚCLEO PARA COBRAR', CX, CY + r + below + 24);
+      ctx.fillText('¡TOCÁ EL NÚCLEO!', CX, CY + r + below + 24);
       ctx.globalAlpha = 1;
     }
   }
@@ -1129,6 +1325,40 @@ export class Growcore implements MiniGame {
     (this.ctx as CanvasRenderingContext2D & { letterSpacing?: string }).letterSpacing = `${px}px`;
   }
 
+  /**
+   * Like `greedyWrap`, but evens the lines out: finds the narrowest width that still needs
+   * the same number of lines, so no word is left stranded alone on the last line.
+   */
+  private wrap(text: string, max: number): string[] {
+    const lines = this.greedyWrap(text, max);
+    if (lines.length < 2) return lines;
+    let lo = max / lines.length;
+    let hi = max;
+    while (hi - lo > 2) {
+      const mid = (lo + hi) / 2;
+      if (this.greedyWrap(text, mid).length > lines.length) lo = mid;
+      else hi = mid;
+    }
+    return this.greedyWrap(text, hi);
+  }
+
+  /** Splits `text` into lines no wider than `max`, using the current ctx font. */
+  private greedyWrap(text: string, max: number): string[] {
+    const lines: string[] = [];
+    let line = '';
+    for (const word of text.split(' ')) {
+      const next = line ? `${line} ${word}` : word;
+      if (line && this.ctx.measureText(next).width > max) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = next;
+      }
+    }
+    if (line) lines.push(line);
+    return lines;
+  }
+
   /** Start screen: rules plus an arcade-style legend that reveals row by row. */
   private drawTitle() {
     const { ctx } = this;
@@ -1141,15 +1371,20 @@ export class Growcore implements MiniGame {
     this.spaced(size * 0.14);
     ctx.fillText(TITLE, CX + size * 0.07, 104);
     this.spaced(0);
-    ctx.font = font(400, 15);
-    ctx.fillStyle = C.inkSoft;
-    ctx.fillText('Mantené presionado para atraer.', CX, 144);
-    ctx.fillText('Tocá el núcleo para cobrar lo guardado.', CX, 166);
-    ctx.fillStyle = C.danger;
-    ctx.fillText('Si te toca una mina, perdés lo que no cobraste.', CX, 188);
 
-    const top = 236;
-    const rowH = 50;
+    // Rules wrap to the screen width, and the legend starts wherever they end.
+    let ry = 142;
+    ctx.font = font(400, 15);
+    for (const rule of START_RULES) {
+      ctx.fillStyle = rule.warn ? C.danger : C.inkSoft;
+      for (const line of this.wrap(rule.text, WIDTH - 36)) {
+        ctx.fillText(line, CX, ry);
+        ry += 21;
+      }
+    }
+
+    const top = ry + 34;
+    const rowH = 46;
     const barX = 196;
     const barW = 64;
     ctx.font = font(600, 11);
@@ -1196,13 +1431,20 @@ export class Growcore implements MiniGame {
       ctx.textAlign = 'center';
       ctx.fillStyle = C.inkSoft;
       ctx.font = font(400, 14);
-      ctx.fillText('Más pesada, más tarda en llegar... y más paga.', CX, top + LEGEND.length * rowH + 30);
-      ctx.fillText('Más carga en el núcleo = más multiplicador.', CX, top + LEGEND.length * rowH + 52);
+      let ty = top + LEGEND.length * rowH + 24;
+      for (const tip of START_TIPS) {
+        for (const line of this.wrap(tip, WIDTH - 36)) {
+          ctx.fillText(line, CX, ty);
+          ty += 20;
+        }
+        ty += 4;
+      }
       ctx.globalAlpha = 0.6 + Math.sin(this.clock * 4) * 0.4;
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 18);
       this.spaced(3);
-      ctx.fillText('TOCÁ PARA EMPEZAR', CX, HEIGHT - 90);
+      // Under the tips, but never off the bottom of the screen.
+      ctx.fillText('TOCÁ PARA EMPEZAR', CX, Math.min(HEIGHT - 28, Math.max(ty + 30, HEIGHT - 90)));
       this.spaced(0);
       ctx.globalAlpha = 1;
     }
@@ -1329,34 +1571,127 @@ export class Growcore implements MiniGame {
       return;
     }
 
-    ctx.fillStyle = C.ink;
-    ctx.font = font(700, 44);
-    ctx.fillText(String(Math.round(this.shownScore)), CX, 72);
-    if (this.state === 'playing') this.drawPhase();
-
-    if (this.state === 'over') {
-      ctx.fillStyle = 'rgba(12,10,29,0.72)';
-      ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    if (this.state === 'playing') {
       ctx.fillStyle = C.ink;
-      ctx.font = font(700, 66);
-      ctx.fillText(String(this.score), CX, 250);
-      if (this.lost > 0) {
-        ctx.fillStyle = C.danger;
-        ctx.font = font(600, 16);
-        ctx.fillText(`Perdiste ${this.lost} sin cobrar`, CX, 286);
+      ctx.font = font(700, 44);
+      ctx.fillText(String(Math.round(this.shownScore)), CX, 72);
+      this.drawPhase();
+    }
+
+    if (this.state === 'over') this.drawResults();
+  }
+
+  /**
+   * Results: score and coins, then a "ladder" with the run just above, this run and the one
+   * just below on the local board, plus how far the next spot was. The near miss is the hook.
+   */
+  private drawResults() {
+    const { ctx } = this;
+    ctx.fillStyle = 'rgba(12,10,29,0.72)';
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+    ctx.textAlign = 'center';
+
+    if (this.lostGems > 0) {
+      ctx.fillStyle = C.danger;
+      ctx.font = font(600, 15);
+      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'gema' : 'gemas'}`, CX, 104);
+    }
+    ctx.fillStyle = C.ink;
+    ctx.font = font(700, 72);
+    ctx.fillText(String(this.score), CX, 180);
+    ctx.fillStyle = C.gold;
+    ctx.font = font(700, 18);
+    ctx.fillText(`+${this.runCoins} ●`, CX, 214);
+
+    const res = this.result;
+    if (res) {
+      const rows: { pos: number; run: Run; me: boolean }[] = [];
+      if (res.above) rows.push({ pos: res.pos - 1, run: res.above, me: false });
+      rows.push({ pos: res.pos, run: { p: this.score, m: this.runCoins, t: 0 }, me: true });
+      if (res.below) rows.push({ pos: res.pos + 1, run: res.below, me: false });
+      // Keep "this run" in the middle slot even when there's nothing above it.
+      let y = res.above ? 262 : 320;
+      for (const row of rows) {
+        const w = row.me ? 280 : 244;
+        const h = row.me ? 50 : 42;
+        const x = CX - w / 2;
+        this.drawPanel(x, y, w, h, row.me);
+        const cy = y + h / 2 + 6;
+        ctx.textAlign = 'left';
+        ctx.fillStyle = row.me ? T_MINT : C.inkSoft;
+        ctx.font = font(700, row.me ? 18 : 14);
+        ctx.fillText(`${row.pos}º`, x + 18, cy);
+        ctx.fillStyle = row.me ? C.ink : '#d8cfe8';
+        ctx.font = font(700, row.me ? 22 : 16);
+        ctx.fillText(String(row.run.p), x + 62, cy);
+        ctx.textAlign = 'right';
+        if (row.me) {
+          ctx.fillStyle = T_MINT;
+          ctx.font = font(700, 11);
+          this.spaced(2);
+          ctx.fillText('ESTA PARTIDA', x + w - 16, cy - 1);
+          this.spaced(0);
+        } else {
+          ctx.fillStyle = C.gold;
+          ctx.font = font(600, 13);
+          ctx.fillText(`${row.run.m} ●`, x + w - 16, cy);
+        }
+        y += h + 16;
       }
-      ctx.fillStyle = C.gold;
-      ctx.font = font(700, 21);
-      ctx.fillText(`+${this.runCoins} ●`, CX, 332);
-      if (this.clock - this.overAt > 0.6) {
-        ctx.globalAlpha = 0.6 + Math.sin(this.clock * 4) * 0.4;
-        ctx.fillStyle = C.ink;
-        ctx.font = font(700, 18);
-        this.spaced(3);
-        ctx.fillText('TOCÁ PARA REINTENTAR', CX, HEIGHT - 120);
+
+      ctx.textAlign = 'center';
+      ctx.font = font(600, 14);
+      if (res.total === 1) {
+        ctx.fillStyle = C.inkSoft;
+        ctx.fillText('Tu primera partida', CX, 460);
+      } else if (res.pos === 1) {
+        ctx.fillStyle = C.gold;
+        ctx.font = font(700, 16);
+        this.spaced(2);
+        ctx.fillText('¡NUEVO RÉCORD!', CX, 460);
         this.spaced(0);
-        ctx.globalAlpha = 1;
+        if (res.prevBest > 0) {
+          ctx.fillStyle = C.inkSoft;
+          ctx.font = font(400, 13);
+          ctx.fillText(`Superaste tu récord por ${this.score - res.prevBest}`, CX, 488);
+        }
+      } else {
+        const gap = res.above!.p - this.score + 1;
+        ctx.fillStyle = C.gold;
+        ctx.fillText(`Te faltaron ${gap} ${gap === 1 ? 'punto' : 'puntos'} para el ${res.pos - 1}º`, CX, 460);
+        ctx.fillStyle = C.inkSoft;
+        ctx.font = font(400, 13);
+        ctx.fillText(`Tu récord: ${res.prevBest}`, CX, 488);
       }
     }
+
+    if (this.clock - this.overAt > 0.6) {
+      ctx.textAlign = 'center';
+      ctx.globalAlpha = 0.6 + Math.sin(this.clock * 4) * 0.4;
+      ctx.fillStyle = C.ink;
+      ctx.font = font(700, 16);
+      this.spaced(3);
+      ctx.fillText('TOCÁ PARA REINTENTAR', CX, HEIGHT - 40);
+      this.spaced(0);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /** Rounded row for the results ladder; this run's row is tinted mint. */
+  private drawPanel(x: number, y: number, w: number, h: number, highlight: boolean) {
+    const { ctx } = this;
+    const r = 14;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = highlight ? 'rgba(143,216,201,0.18)' : 'rgba(12,10,29,0.62)';
+    ctx.fill();
+    ctx.strokeStyle = highlight ? 'rgba(143,216,201,0.6)' : 'rgba(255,255,255,0.10)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   }
 }

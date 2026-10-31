@@ -1,6 +1,6 @@
 # GROWCORE — documento de diseño
 
-> Mantené presionado para atraer. Tocá el núcleo para cobrar. Si te toca una mina, perdés lo que no cobraste.
+> Mantené presionado para atraer. Tocá el núcleo para liberar la carga y sumar puntos. ¡Cuidado con las bombas! Si las atraés, perdés todo lo acumulado.
 
 ## Pitch
 
@@ -18,6 +18,8 @@ Dos decisiones constantes: *¿suelto ya o aguanto un poco más?* y *¿cobro ahor
 dejo crecer?*
 
 ## Ítems: escalera de riesgo
+
+> En el juego, la mina se llama **Bomba**. En este documento y en el código sigue diciendo "mina" (`mine`).
 
 | Ítem | Peso | Puntos | Carga |
 | --- | --- | --- | --- |
@@ -106,7 +108,7 @@ Los colores están en `C`, `KINDS` y `TIERS` de
 | Gancho | Cómo aparece en el juego |
 | --- | --- |
 | **Arriesgar o cobrar** | Cada gema te acerca al próximo multiplicador y a la vez agranda el blanco. La codicia sube la dificultad, no el reloj. |
-| **Pérdida visible** | Al morir: "Perdiste 140 sin cobrar". El "casi" es lo que hace apretar reintentar. |
+| **Pérdida visible** | Al morir: "Perdiste 7 gemas" y "Te faltaron 25 puntos para el 3º". El "casi" es lo que hace apretar reintentar. |
 | **Habilidad legible** | La diferencia de masa hace que los toques cortos sean una técnica que se aprende y se nota. |
 | **Casi-muertes** | "¡CERCA!" da puntos (directos, sin riesgo) cuando una mina roza el núcleo y se va. |
 | **El sonido cuenta la tensión** | Cada captura suena más aguda que la anterior: cuanto más alto, más tenés en juego. Cobrar suena con un arpegio más largo cuanto mayor es el tramo. |
@@ -116,7 +118,7 @@ Los colores están en `C`, `KINDS` y `TIERS` de
 
 - **Mantener fuera del núcleo:** atraer.
 - **Tocar el núcleo** (con algo guardado): cobrar. Ese toque no atrae aunque lo mantengas. Con el núcleo vacío, tocarlo atrae como cualquier otro lado, para que el jugador nuevo no se trabe.
-- La primera vez que llegás a x2 aparece "TOCÁ EL NÚCLEO PARA COBRAR" hasta que cobrás por primera vez.
+- La primera vez que llegás a x2 aparece "¡TOCÁ EL NÚCLEO!" hasta que lo hacés estallar por primera vez. En los textos para el jugador, "cobrar" se dice **hacer estallar** el núcleo.
 
 ## Bucle
 
@@ -124,11 +126,22 @@ Los colores están en `C`, `KINDS` y `TIERS` de
 - **Partida:** puntaje → monedas (1 cada 5 puntos).
 - **Meta (días, pendiente):** monedas → mejoras y skins → desafíos diarios → volver mañana.
 
-**Estado actual del prototipo:** el puntaje y las monedas empiezan en 0 en cada
-partida y no se guardan entre partidas; tampoco hay récord. Se vuelven a guardar
-cuando tengan un objetivo (algo que comprar con las monedas, un récord o una tabla
-que superar). Lo único que se guarda en el dispositivo es el mute y si el jugador
-ya cobró alguna vez (para no repetirle el cartel de ayuda).
+**Puntaje y monedas:** cada partida empieza en 0 puntos y 0 monedas. Al terminar,
+la partida (puntos, monedas, fecha) se guarda en una **tabla local** del
+dispositivo, ordenada de mejor a peor (hasta 200 partidas).
+
+**Pantalla final ("escalera"):** muestra cuántas gemas se perdieron ("Perdiste 7
+gemas", si había gemas en el núcleo), el puntaje grande, las monedas ganadas y tres
+filas: la partida de arriba, **esta partida** resaltada y la de abajo. Debajo, el
+gancho de reintento:
+
+- "Te faltaron 25 puntos para el 3º" (lo justo para superar al de arriba) + "Tu récord: 612".
+- Si es el mejor: "¡NUEVO RÉCORD!" + "Superaste tu récord por 93".
+- La primera vez: "Tu primera partida".
+
+En el dispositivo también se guardan el mute y si el jugador ya hizo estallar el
+núcleo alguna vez (para no repetirle el cartel de ayuda). Una tabla **global**
+compartida entre jugadores necesitaría un servidor: queda para más adelante.
 
 ## Modelo de negocio (hybrid-casual)
 
