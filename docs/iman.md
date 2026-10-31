@@ -19,18 +19,38 @@ dejo crecer?*
 
 ## Ítems: escalera de riesgo
 
-| Ítem | Peso | Puntos | Carga | Aparición |
-| --- | --- | --- | --- | --- |
-| Gema celeste | 1 | 1 | 1 | la más común |
-| Gema amarilla | 2 | 5 | 2 | 12 % |
-| Gema rosa | 3 | 15 | 3 | 5 % |
-| Mina | 3,4 | perdés lo no cobrado | — | 20 % → 50 % con el tiempo |
+| Ítem | Peso | Puntos | Carga |
+| --- | --- | --- | --- |
+| Gema celeste | 1 | 1 | 1 |
+| Gema amarilla | 2 | 5 | 2 |
+| Gema rosa | 3 | 15 | 3 |
+| Mina | 3,4 | perdés lo no cobrado | — |
 
 La gema rosa pesa casi lo mismo que una mina: para traerla tenés que mantener tanto
 como para arrastrar una mina también. Cada rosa en pantalla es un "¿me la juego?".
 
 La pantalla de inicio muestra esta tabla al estilo arcade: las filas aparecen una
 por una, con una barra de peso que deja la rosa visualmente pegada a la mina.
+
+## Fases
+
+Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVA GEMA!" con ícono y
+valor, "¡MÁS MINAS!", "¡CAOS!"). Cuando entra una gema nueva, es lo primero que
+aparece en esa fase, así el jugador la ve mientras está el cartel. Arriba, debajo
+del puntaje, se ve "FASE N".
+
+| Fase | Desde | Mezcla cada 10 apariciones | Una aparición cada |
+| --- | --- | --- | --- |
+| 1 | 0 s | 8 celestes, 2 minas | 0,8 s |
+| 2 — ¡NUEVA GEMA! amarilla | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s |
+| 3 — ¡NUEVA GEMA! rosa | 35 s | 4 celestes, 2 amarillas, 1 rosa, 3 minas | 0,6 s |
+| 4 — ¡MÁS MINAS! | 60 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,48 s |
+| 5 — ¡CAOS! | 90 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s |
+
+**Bolsa en vez de dado:** las apariciones se reparten de una bolsa mezclada con la
+mezcla de la fase, así las proporciones se cumplen siempre (sin rachas raras ni
+minutos sin rosas). Además nunca salen más de 2 minas seguidas. La velocidad de las
+gemas sigue subiendo de a poco con el tiempo.
 
 ## Cobro por tramos
 
@@ -109,19 +129,20 @@ Primero conviene un test de mercado barato: 3 creatividades de 15 s (la tensión
 
 ## Valores de ajuste
 
-Todo está en el objeto `T` de [`src/games/iman.ts`](../src/games/iman.ts). Los más
+Todo está arriba de [`src/games/iman.ts`](../src/games/iman.ts). Los más
 importantes para el feel:
 
-- `mine.mass` vs `shard.mass` en `KINDS`: la brecha de masa *es* el juego.
+- `mass` de cada gema vs la mina en `KINDS`: la brecha de masa *es* el juego.
 - `TIERS`: los cortes y multiplicadores del cobro. Es el número más importante del juego.
-- `coreGrowth`, `coreMax`: cuánto castiga crecer.
-- `fieldGrowth`, `pullGrowth`: cuánto premia crecer.
-- `pullForce`, `pullDecay`: qué tan "pegajoso" se siente el imán.
-- `spawnRamp`, `mineRamp`: curva de dificultad (hoy el pico llega a ~50 s).
+- `PHASES`: cuándo entra cada cosa, la mezcla y el ritmo de aparición (la curva de dificultad).
+- `coreGrowth`, `coreMax` en `T`: cuánto castiga crecer.
+- `fieldGrowth`, `pullGrowth` en `T`: cuánto premia crecer.
+- `pullForce`, `pullDecay` en `T`: qué tan "pegajoso" se siente el imán.
 
-**A vigilar en el test:** en una simulación con un jugador muy prudente, pasado el
-minuto la pantalla se llena de minas y se carga muy lento (de 2 a 21 en 90 s). Si
-un humano lo siente avaro, bajar `mineMax` o frenar `mineRamp`.
+**A vigilar en el test:** un jugador simulado muy prudente (solo atrae sin minas
+cerca) sobrevive indefinidamente pero carga muy lento en las fases 4 y 5. Si un
+humano lo siente estancado, bajar las minas de esas fases en `PHASES`, o hacer que
+el tiempo también apriete (por ejemplo, minas que apuntan más cerca del núcleo).
 
 ## Próximos pasos del prototipo
 

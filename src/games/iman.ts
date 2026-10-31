@@ -31,14 +31,6 @@ const T = {
   driftCap: 120,
   missMin: 70, // passive trajectories never cross the core
   missMax: 190,
-  spawnStart: 0.8,
-  spawnMin: 0.28,
-  spawnRamp: 0.011, // seconds of spawn interval lost per second played
-  mineStart: 0.2,
-  mineMax: 0.5,
-  mineRamp: 0.006,
-  yellowChance: 0.12,
-  pinkChance: 0.05,
   nearMissGap: 22,
   nearMissPoints: 5,
   pointsPerCoin: 5,
@@ -61,6 +53,27 @@ const KINDS: Record<Kind, { r: number; mass: number; value: number; load: number
 
 /** Order shown on the start screen legend. */
 const LEGEND: Kind[] = ['cyan', 'yellow', 'pink', 'mine'];
+
+interface Phase {
+  at: number; // seconds into the run
+  interval: number; // seconds between spawns
+  bag: Partial<Record<Kind, number>>; // spawn mix per 10, dealt shuffled
+  title?: string; // banner shown when the phase starts
+  intro?: Kind; // new item: spawned first and featured on the banner
+}
+
+/**
+ * Pacing: each phase introduces one thing. Spawns are dealt from a shuffled
+ * bag so the mix always holds (no droughts, no mine streaks).
+ */
+const PHASES: Phase[] = [
+  { at: 0, interval: 0.8, bag: { cyan: 8, mine: 2 } },
+  { at: 15, interval: 0.7, bag: { cyan: 5, yellow: 2, mine: 3 }, title: '¡NUEVA GEMA!', intro: 'yellow' },
+  { at: 35, interval: 0.6, bag: { cyan: 4, yellow: 2, pink: 1, mine: 3 }, title: '¡NUEVA GEMA!', intro: 'pink' },
+  { at: 60, interval: 0.48, bag: { cyan: 3, yellow: 2, pink: 1, mine: 4 }, title: '¡MÁS MINAS!' },
+  { at: 90, interval: 0.36, bag: { cyan: 2, yellow: 2, pink: 1, mine: 5 }, title: '¡CAOS!' },
+];
+const MAX_MINE_STREAK = 2;
 
 /** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
 const TIERS = [
@@ -125,6 +138,10 @@ export class Iman implements MiniGame {
   private clock = 0; // seconds since boot, drives animation
   private time = 0; // seconds into the current run
   private spawnTimer = 0;
+  private phase = 0;
+  private bag: Kind[] = [];
+  private mineStreak = 0; // consecutive mines dealt so far
+  private bannerAt = -99; // clock time the current phase banner appeared
   private score = 0;
   private shownScore = 0; // counts up toward score
   private bank = 0; // points stored in the core, not yet cashed
@@ -217,10 +234,13 @@ export class Iman implements MiniGame {
     }
 
     this.time += dt;
+    const next = PHASES[this.phase + 1];
+    if (next && this.time >= next.at) this.enterPhase(this.phase + 1);
+
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawn();
-      this.spawnTimer = Math.max(T.spawnMin, T.spawnStart - this.time * T.spawnRamp);
+      this.spawnTimer = PHASES[this.phase].interval;
     }
 
     const decay = Math.exp(-T.pullDecay * dt);
@@ -284,20 +304,56 @@ export class Iman implements MiniGame {
     this.bank = 0;
     this.load = 0;
     this.lost = 0;
+    this.phase = 0;
+    this.bag = [];
+    this.mineStreak = 0;
+    this.bannerAt = -99;
     tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
   }
 
+  private enterPhase(i: number) {
+    const p = PHASES[i];
+    this.phase = i;
+    // New item goes first so it shows up while the banner is on screen.
+    this.bag = p.intro ? [p.intro] : [];
+    this.spawnTimer = Math.min(this.spawnTimer, 0.4);
+    this.bannerAt = this.clock;
+    [0, 2, 4, 7].forEach((s, j) => tone({ freq: note(s + 3), dur: 0.18, type: 'square', gain: 0.07, delay: j * 0.08 }));
+    vibrate(25);
+  }
+
+  /** The current phase's mix, shuffled. */
+  private freshBag(): Kind[] {
+    const bag: Kind[] = [];
+    for (const [kind, n] of Object.entries(PHASES[this.phase].bag) as [Kind, number][]) {
+      for (let i = 0; i < n; i++) bag.push(kind);
+    }
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    return bag;
+  }
+
+  /** Deals the next kind from the bag, never more than MAX_MINE_STREAK mines in a row. */
+  private nextKind(): Kind {
+    if (this.bag.length === 0) this.bag = this.freshBag();
+    if (this.mineStreak >= MAX_MINE_STREAK && this.bag[0] === 'mine') {
+      // Swap in the first gem; if the bag is all mines, borrow from the next one.
+      let i = this.bag.findIndex((k) => k !== 'mine');
+      if (i < 0) {
+        this.bag.push(...this.freshBag());
+        i = this.bag.findIndex((k) => k !== 'mine');
+      }
+      [this.bag[0], this.bag[i]] = [this.bag[i], this.bag[0]];
+    }
+    const kind = this.bag.shift()!;
+    this.mineStreak = kind === 'mine' ? this.mineStreak + 1 : 0;
+    return kind;
+  }
+
   private spawn() {
-    const mineP = Math.min(T.mineMax, T.mineStart + this.time * T.mineRamp);
-    const roll = Math.random();
-    const kind: Kind =
-      roll < mineP
-        ? 'mine'
-        : roll < mineP + T.pinkChance
-          ? 'pink'
-          : roll < mineP + T.pinkChance + T.yellowChance
-            ? 'yellow'
-            : 'cyan';
+    const kind = this.nextKind();
 
     // Enter from a random edge, just off screen.
     const side = Math.floor(Math.random() * 4);
@@ -701,6 +757,40 @@ export class Iman implements MiniGame {
     }
   }
 
+  /** Phase label under the score, plus a banner for ~2.5 s when a phase starts. */
+  private drawPhase() {
+    const { ctx } = this;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#8f88c9';
+    ctx.font = 'bold 12px system-ui, sans-serif';
+    ctx.fillText(`FASE ${this.phase + 1}`, CX, 94);
+
+    const p = PHASES[this.phase];
+    const t = this.clock - this.bannerAt;
+    if (!p.title || t > 2.5) return;
+    // Pop in, hold, fade out.
+    const alpha = Math.min(1, t * 6, (2.5 - t) * 2);
+    const scale = 1 + Math.max(0, 0.25 - t) * 1.6;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(CX, 150);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = p.intro ? KINDS[p.intro].color : '#ff8a8a';
+    ctx.font = '900 28px system-ui, sans-serif';
+    ctx.fillText(p.title, 0, 0);
+    if (p.intro) {
+      const k = KINDS[p.intro];
+      ctx.font = 'bold 16px system-ui, sans-serif';
+      const label = `${k.name}  +${k.value}`;
+      const w = ctx.measureText(label).width;
+      this.drawItem(p.intro, -w / 2 - 6, 26, this.clock * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.fillText(label, -w / 2 + 12, 32);
+    }
+    ctx.restore();
+  }
+
   private drawHud() {
     const { ctx } = this;
     if (this.state === 'playing') {
@@ -721,6 +811,7 @@ export class Iman implements MiniGame {
     ctx.fillStyle = '#ffffff';
     ctx.font = '900 44px system-ui, sans-serif';
     ctx.fillText(String(Math.round(this.shownScore)), CX, 70);
+    if (this.state === 'playing') this.drawPhase();
 
     if (this.state === 'over') {
       ctx.fillStyle = 'rgba(5,4,11,0.6)';
