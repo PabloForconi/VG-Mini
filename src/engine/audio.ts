@@ -113,6 +113,9 @@ export class Drone {
 /** Haptics where supported (Android Chrome); silently ignored elsewhere (iOS). */
 export function vibrate(pattern: number | number[]) {
   if (muted) return;
+  // Before the first real tap the browser refuses (and logs an error), so don't ask.
+  const activation = (navigator as Navigator & { userActivation?: { hasBeenActive: boolean } }).userActivation;
+  if (activation && !activation.hasBeenActive) return;
   try {
     navigator.vibrate?.(pattern);
   } catch {

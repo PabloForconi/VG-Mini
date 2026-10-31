@@ -84,6 +84,22 @@ muere.
 
 Un anillo alrededor del núcleo muestra cuánto falta para el próximo tramo.
 
+## Estética
+
+Inspirada en el lenguaje general de juegos como Monument Valley (sin copiar nada
+puntual): calma, pasteles y geometría limpia.
+
+- **Cielo** de amanecer en degradé (durazno → rosa → lavanda), sol pálido, bruma abajo y motas de luz subiendo.
+- **Torres isométricas** en los costados y abajo, en 3 tonos planos (techo claro, cara media, cara en sombra), con ventanas en arco y cúpulas o techos dorados. Quedan fuera del centro para no molestar al jugar.
+- **Núcleo**: cubo isométrico; sus caras cambian de tono pastel con el tramo (crema → menta → verde agua → dorado → coral).
+- **Gemas**: cristales facetados en dos tonos que giran sobre su eje (verde agua, mostaza, coral rosado), con sombra suave.
+- **Minas**: ciruela oscuro con corazón coral que late. Lo oscuro sobre pastel es lo que más resalta: el peligro se lee al instante.
+- **Escudos**: burbujas blancas con un borde ciruela muy tenue para que se lean sobre el cielo claro.
+- **Texto**: Josefin Sans, tinta ciruela, títulos con espaciado amplio.
+
+Los colores están en `C`, `KINDS`, `TIERS` y `BLOCK_TONES` de
+[`src/games/iman.ts`](../src/games/iman.ts); las torres en `FAR_TOWERS` y `NEAR_TOWERS`.
+
 ## Por qué engancha
 
 | Gancho | Cómo aparece en el juego |
