@@ -328,7 +328,7 @@ export class Iman implements MiniGame {
   }
 
   /** The pizza pickup is one flat color that eases through PIZZA_COLORS in a loop. */
-  private pizzaColor() {
+  private pizzaColor(alpha = 1) {
     const t = (this.clock / PIZZA_COLOR_SECONDS) % PIZZA_COLORS.length;
     const i = Math.floor(t);
     const a = PIZZA_COLORS[i];
@@ -336,7 +336,7 @@ export class Iman implements MiniGame {
     const f = t - i;
     const e = f * f * (3 - 2 * f); // smoothstep: linger on each color, glide between
     const mix = (k: number) => Math.round(a[k] + (b[k] - a[k]) * e);
-    return `rgb(${mix(0)}, ${mix(1)}, ${mix(2)})`;
+    return `rgba(${mix(0)}, ${mix(1)}, ${mix(2)}, ${alpha})`;
   }
 
   private targetCoreR() {
@@ -824,21 +824,15 @@ export class Iman implements MiniGame {
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(spin);
-    if (kind === 'shield') {
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.fill();
-    } else {
-      // Solid flat color (vs the plain shield's translucent bubble) that keeps cycling.
-      ctx.fillStyle = this.pizzaColor();
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.strokeStyle = '#ffffff';
+    // Same translucent bubble for both; the pizza one tints fill and rim with its cycling color.
+    const rim = kind === 'shield' ? '#ffffff' : this.pizzaColor();
+    ctx.fillStyle = kind === 'shield' ? 'rgba(255,255,255,0.3)' : this.pizzaColor(0.35);
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = rim;
     ctx.lineWidth = 2.5;
-    ctx.shadowColor = '#ffffff';
+    ctx.shadowColor = rim;
     ctx.shadowBlur = 10;
     ctx.beginPath();
     ctx.arc(0, 0, r, 0, Math.PI * 2);

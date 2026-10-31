@@ -94,7 +94,7 @@ edilicias.**
 - **Núcleo**: círculo pastel con brillo, que cambia de tono con el tramo (crema → menta → verde agua → dorado → coral). El número va en tinta oscura.
 - **Gemas**: cristales facetados en dos tonos, **quietos** (sin giro), con brillo suave de su color.
 - **Minas**: cuerpo de pinchos **rojo** con **centro blanco** que late.
-- **Escudos**: burbujas blancas con brillo. El ícono pizza es de un solo color plano que cambia suave en ciclo (blanco → rosa → amarillo → verde → celeste → lila), sin divisiones; se distingue del simple porque es sólido y el simple es una burbuja transparente.
+- **Escudos**: burbujas blancas con brillo. El ícono pizza es de un solo color plano que cambia suave en ciclo (blanco → rosa → amarillo → verde → celeste → lila), sin divisiones: la misma burbuja transparente que el simple, pero teñida (relleno y borde) con el color que va cambiando.
 - **Texto**: Josefin Sans en tonos claros, títulos con espaciado amplio.
 
 Los colores están en `C`, `KINDS` y `TIERS` de
