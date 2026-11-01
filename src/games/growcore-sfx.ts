@@ -63,8 +63,8 @@ export function blockSfx() {
 
 /** A bomb brushed past the core: air rushing by and a small bell of relief. */
 export function nearMissSfx() {
-  whoosh(700, 4000, 0.35, 0.09);
-  bell(note(9), { gain: 0.06, dur: 1, delay: 0.12 });
+  whoosh(700, 4000, 0.35, 0.05);
+  bell(note(9), { gain: 0.035, dur: 1, delay: 0.12 });
 }
 
 /** Cash-out: a cascade of bells, longer and higher for bigger tiers, over a soft low bloom. */
@@ -81,10 +81,15 @@ export function recordSfx() {
   [0, 2, 4, 5, 7].forEach((s, i) => bell(note(s + 5), { gain: 0.08, dur: 1.4, delay: i * 0.07, wet: 0.7 }));
 }
 
-/** A phase with a banner begins: a staggered bell chord riding a breath of air. */
+/**
+ * A phase with a banner begins: a soft swipe of air, no bells, so it never blends with the catch
+ * sounds. The sweep up matches the banner sliding in; a low swell underneath gives it body
+ * well below the bells' range, and a quieter sweep back down trails off in the hall.
+ */
 export function phaseSfx() {
-  [0, 2, 4, 7].forEach((s, i) => bell(note(s + 3), { gain: 0.07, dur: 1.8, delay: i * 0.07, wet: 0.7 }));
-  whoosh(500, 3000, 0.7, 0.05);
+  whoosh(300, 5000, 0.45, 0.2);
+  whoosh(4000, 900, 0.6, 0.06, 0.3);
+  tone({ freq: 110, to: 165, dur: 0.7, type: 'sine', gain: 0.09, attack: 0.25, wet: 0.5 });
 }
 
 /** Tap to play: a rising sweep, like lifting off. */
