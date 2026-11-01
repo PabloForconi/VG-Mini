@@ -4,7 +4,7 @@
 
 ## Pitch
 
-Un núcleo en el centro de la pantalla. Gemas y minas cruzan flotando. Mientras
+Un núcleo en el centro de la pantalla. Cristales y minas cruzan flotando. Mientras
 mantenés presionado, el núcleo atrae **todo** lo que está dentro de su campo. Cuanto
 más pesado algo, más tarda en llegar.
 
@@ -19,17 +19,17 @@ dejo crecer?*
 
 ## Ítems: escalera de riesgo
 
-> En el juego, la mina se llama **Bomba**. En este documento y en el código sigue diciendo "mina" (`mine`).
+> En el juego, la mina se llama **Bomba** y las gemas son **cristales** (Celestina, Citrino y Rodonita). En el código siguen siendo `mine`, `cyan`, `yellow` y `pink`. El escudo pizza se llama **Super Escudo**.
 
 | Ítem | Peso | Puntos | Carga |
 | --- | --- | --- | --- |
-| Gema celeste | 1 | 1 | 1 |
-| Gema amarilla | 2 | 5 | 2 |
-| Gema rosa | 3 | 15 | 3 |
+| Celestina (celeste) | 1 | 1 | 1 |
+| Citrino (amarillo) | 2 | 5 | 2 |
+| Rodonita (rosa) | 3 | 15 | 3 |
 | Mina | 3,4 | perdés lo no cobrado | — |
-| Gema falsa (3 tamaños) | 1, 2 o 3 (igual que la real) | perdés lo no cobrado | — |
+| Cristal falso (3 tamaños) | 1, 2 o 3 (igual que la real) | perdés lo no cobrado | — |
 
-La gema rosa pesa casi lo mismo que una mina: para traerla tenés que mantener tanto
+La Rodonita pesa casi lo mismo que una mina: para traerla tenés que mantener tanto
 como para arrastrar una mina también. Cada rosa en pantalla es un "¿me la juego?".
 
 La pantalla de inicio muestra esta tabla al estilo arcade: las filas aparecen una
@@ -37,7 +37,7 @@ por una, con una barra de peso que deja la rosa visualmente pegada a la mina.
 
 ## Fases
 
-Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVA GEMA!" o "¡NUEVO
+Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVO CRISTAL!" o "¡NUEVO
 ESCUDO!" con ícono, "¡CAOS!"). Cuando entra algo nuevo, es lo primero que aparece
 en esa fase, así el jugador lo ve mientras está el cartel. Arriba, debajo del
 puntaje, se ve "FASE N".
@@ -45,30 +45,30 @@ puntaje, se ve "FASE N".
 | Fase | Desde | Mezcla cada 10 apariciones | Una aparición cada | Escudos al azar |
 | --- | --- | --- | --- | --- |
 | 1 | 0 s | 8 celestes, 2 minas | 0,8 s | — |
-| 2 — ¡NUEVA GEMA! amarilla | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — |
-| 3 — ¡NUEVA GEMA! rosa | 35 s | 4 celestes, 2 amarillas, 1 rosa, 3 minas | 0,6 s | — |
+| 2 — ¡NUEVO CRISTAL! Citrino | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — |
+| 3 — ¡NUEVO CRISTAL! Rodonita | 35 s | 4 celestes, 2 amarillas, 1 rosa, 3 minas | 0,6 s | — |
 | 4 — ¡NUEVO ESCUDO! simple | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple |
-| 5 — ¡NUEVO ESCUDO! pizza | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza |
+| 5 — ¡NUEVO ESCUDO! Super Escudo | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza |
 | 6 — ¡CAOS! | 105 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s | simple o pizza |
-| 7 — ¡GEMAS FALSAS! | 135 s | 2 celestes, 2 amarillas, 1 rosa, 4 minas, 1 falsa grande | 0,36 s | simple o pizza |
+| 7 — ¡CRISTALES FALSOS! | 135 s | 2 celestes, 2 amarillas, 1 rosa, 4 minas, 1 falsa grande | 0,36 s | simple o pizza |
 | 8 (sin cartel) | 160 s | 2 celestes, 2 amarillas, 1 rosa, 3 minas, 1 falsa grande, 1 falsa mediana | 0,36 s | simple o pizza |
 | 9 (sin cartel) | 185 s | 2 celestes, 2 amarillas, 1 rosa, 2 minas, 1 falsa de cada tamaño | 0,36 s | simple o pizza |
 
 **Bolsa en vez de dado:** las apariciones se reparten de una bolsa mezclada con la
 mezcla de la fase, así las proporciones se cumplen siempre (sin rachas raras ni
-minutos sin rosas). Además nunca salen más de 2 mortales seguidos (minas o gemas falsas); un escudo corta la racha. La velocidad de las
-gemas sigue subiendo de a poco con el tiempo.
+minutos sin rosas). Además nunca salen más de 2 mortales seguidos (minas o cristales falsos); un escudo corta la racha. La velocidad de los
+cristales sigue subiendo de a poco con el tiempo.
 
-## Gemas falsas
+## Cristales falsos
 
-Desde la fase 7 aparecen **gemas falsas**: bombas disfrazadas. Son rojas, con la
-silueta dentada de la "gema maldita" (8 puntas) y del mismo tamaño que la gema
-buena que imitan: grande (rosa), mediana (amarilla) y pequeña (celeste). Pesan
-**lo mismo** que su gema real, así que el peso no las delata: hay que mirarlas.
+Desde la fase 7 aparecen **cristales falsos**: bombas disfrazadas. Son rojos, con la
+silueta dentada de la "gema maldita" (8 puntas) y del mismo tamaño que el cristal
+bueno que imitan: grande (Rodonita), mediano (Citrino) y pequeño (Celestina). Pesan
+**lo mismo** que su cristal real, así que el peso no las delata: hay que mirarlas.
 Atraer una es igual que atraer una mina (los escudos también las paran).
 
 Entran de a una por fase, primero la más pesada: la grande en la 7 (con el cartel
-"¡GEMAS FALSAS!", que explica la idea), la mediana en la 8 y la pequeña en la 9.
+"¡CRISTALES FALSOS!", que explica la idea), el mediano en la 8 y el pequeño en la 9.
 Las fases 8 y 9 no tienen cartel ni fanfarria: solo sube el número de fase y la
 falsa nueva es lo primero que aparece (o lo segundo, si justo venían 2 mortales
 seguidos). Las falsas reemplazan minas, así que la proporción de mortales se
@@ -76,16 +76,16 @@ mantiene en 5 de cada 10.
 
 ## Escudos
 
-Se atraen como cualquier ítem y pesan **3,2** (casi como una mina), así que traer
+Se atraen como cualquier ítem y pesan menos que una mina para que valga la pena ir a buscarlos: el Escudo **2,2** (entre Citrino y Rodonita) y el Super Escudo **2,7**. Igual traer
 uno es tan arriesgado como traer una mina. No suman puntos ni carga. Al atraparlo
 aparece una burbuja alrededor del núcleo que crece con él.
 
 | Escudo | Ícono | Qué hace |
 | --- | --- | --- |
 | Escudo | redondo blanco | La primera mina que toca la burbuja explota sin hacerte nada; la burbuja se rompe. |
-| Escudo pizza | redondo, 6 porciones que cambian de color | La burbuja (blanca, como la del simple) tiene 6 porciones. Una mina rompe solo la porción por donde entra; las otras siguen protegiendo. Una mina que entra por un hueco te toca. |
+| Super Escudo (pizza) | redondo, 6 porciones que cambian de color | La burbuja (blanca, como la del simple) tiene 6 porciones. Una mina rompe solo la porción por donde entra; las otras siguen protegiendo. Una mina que entra por un hueco te toca. |
 
-- El primero de cada tipo llega con su cartel (simple a los 55 s, pizza a los 80 s). Después caen al azar cada 10–18 s.
+- El primero de cada tipo llega con su cartel (Escudo a los 55 s, Super Escudo a los 80 s). Después caen al azar cada 10–18 s.
 - Agarrar un escudo teniendo otro lo reemplaza por el nuevo, completo.
 - Cobrar no saca el escudo; morir sí.
 
@@ -126,8 +126,8 @@ Los colores están en `C`, `KINDS` y `TIERS` de
 
 | Gancho | Cómo aparece en el juego |
 | --- | --- |
-| **Arriesgar o cobrar** | Cada gema te acerca al próximo multiplicador y a la vez agranda el blanco. La codicia sube la dificultad, no el reloj. |
-| **Pérdida visible** | Al morir: "Perdiste 7 gemas" y "Te faltaron 25 puntos para el 3º". El "casi" es lo que hace apretar reintentar. |
+| **Arriesgar o cobrar** | Cada cristal te acerca al próximo multiplicador y a la vez agranda el blanco. La codicia sube la dificultad, no el reloj. |
+| **Pérdida visible** | Al morir: "Perdiste 7 cristales" y "Te faltaron 25 puntos para el 3º". El "casi" es lo que hace apretar reintentar. |
 | **Habilidad legible** | La diferencia de masa hace que los toques cortos sean una técnica que se aprende y se nota. |
 | **Casi-muertes** | "¡CERCA!" da puntos (directos, sin riesgo) cuando una mina roza el núcleo y se va. |
 | **El sonido cuenta la tensión** | Cada captura suena más aguda que la anterior: cuanto más alto, más tenés en juego. Cobrar suena con un arpegio más largo cuanto mayor es el tramo. |
@@ -151,13 +151,17 @@ dispositivo, ordenada de mejor a peor (hasta 200 partidas). Para borrar la tabla
 todos los dispositivos una vez (por ejemplo, al cambiar cómo se puntúa), se sube
 `BOARD_VERSION` en el código: cada dispositivo la vacía la próxima vez que carga.
 
-**Pantalla final ("escalera"):** muestra cuántas gemas se perdieron ("Perdiste 7
-gemas", si había gemas en el núcleo), el puntaje grande, las monedas ganadas y tres
+**Pantalla final ("escalera"):** muestra cuántos cristales se perdieron ("Perdiste 7
+cristales", si había cristales en el núcleo), el puntaje grande, las monedas ganadas y tres
 filas: la partida de arriba, **esta partida** resaltada y la de abajo. Debajo, el
 gancho de reintento:
 
 - "Te faltaron 25 puntos para el 3º" (lo justo para superar al de arriba) + "Tu récord: 612".
 - Si es el mejor: "¡NUEVO RÉCORD!" + "Superaste tu récord por 93".
+
+**Récord en vivo:** durante la partida, en cuanto el puntaje pasa tu mejor partida
+anterior aparece "RÉCORD ALCANZADO" arriba del puntaje (con un arpegio corto) y queda
+hasta el final. En la primera partida no aparece: no hay nada que superar.
 - La primera vez: "Tu primera partida".
 
 Todo entra animado en ~1,3 s (velo, conteo rápido del puntaje con "pop" y chispas,
@@ -230,4 +234,4 @@ el tiempo también apriete (por ejemplo, minas que apuntan más cerca del núcle
 - [ ] Vibración (`navigator.vibrate`) en casi-muertes y en la muerte.
 - [ ] Prototipo de la segunda oportunidad (sin SDK de anuncios, solo el flujo).
 - [ ] Probar variantes: minas que *repelen* al soltar, gemas que solo valen si llegan seguidas.
-- [ ] **Gemas falsas ("gema maldita")**: un cristal facetado como las gemas buenas pero violeta oscuro con filos rojos y aristas dentadas. Se parece lo suficiente a una gema como para tentar, y castiga al que atrae sin mirar. Boceto de la forma en la lámina de opciones de mina (opción 6).
+- [x] **Cristales falsos ("gema maldita")**: hechos, ver la sección *Cristales falsos*. Idea original: un cristal facetado como las gemas buenas pero violeta oscuro con filos rojos y aristas dentadas. Se parece lo suficiente a una gema como para tentar, y castiga al que atrae sin mirar. Boceto de la forma en la lámina de opciones de mina (opción 6).

@@ -19,7 +19,7 @@ const START_RULES: { text: string; warn?: boolean }[] = [
   { text: 'Tocá el núcleo para liberar la carga.' },
   { text: '¡Cuidado con las bombas!', warn: true },
 ];
-const START_TIPS = ['Más pesada, más puntos.', 'Más carga, más multiplicador.'];
+const START_TIPS = ['Más pesado, más puntos.', 'Más carga, más multiplicador.'];
 const CX = WIDTH / 2;
 const CY = HEIGHT / 2;
 
@@ -82,6 +82,7 @@ interface KindDef {
   light: string; // lit facet
   dark: string; // shaded facet
   name: string;
+  hue?: string; // color word shown after the name on the phase banner
   blurb?: string; // banner line instead of "+value"
 }
 
@@ -92,23 +93,24 @@ const FAKE_LOOK = {
   color: '#f2565c',
   light: '#ff8a80',
   dark: '#a52834',
-  name: 'Gema falsa',
-  blurb: 'Rojas: son bombas disfrazadas',
+  name: 'Cristal falso',
+  blurb: 'Rojos: son bombas disfrazadas',
 };
 
 /**
  * Risk ladder: heavier gems answer the pull slower and pay more. Pink sits
  * just under the mine's mass, so pulling one in means holding long enough
- * to drag a mine too. Shields are about as heavy as a mine for the same reason.
+ * to drag a mine too. Shields are lighter so they are worth chasing: the plain one sits between
+ * citrine and rhodonite, the super one a bit heavier.
  */
 const KINDS: Record<Kind, KindDef> = {
-  cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#7fcabc', light: '#b2e6dc', dark: '#4f9e91', name: 'Gema celeste' },
-  yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ecc56a', light: '#f8e1a0', dark: '#c4922f', name: 'Gema amarilla' },
-  pink: { r: 11, mass: 3, value: 15, load: 3, color: '#e894a8', light: '#f6bfcb', dark: '#c4637c', name: 'Gema rosa' },
+  cyan: { r: 7, mass: 1, value: 1, load: 1, color: '#7fcabc', light: '#b2e6dc', dark: '#4f9e91', name: 'Celestina', hue: 'Celeste' },
+  yellow: { r: 9, mass: 2, value: 5, load: 2, color: '#ecc56a', light: '#f8e1a0', dark: '#c4922f', name: 'Citrino', hue: 'Amarillo' },
+  pink: { r: 11, mass: 3, value: 15, load: 3, color: '#e894a8', light: '#f6bfcb', dark: '#c4637c', name: 'Rodonita', hue: 'Rosa' },
   mine: { r: 11, mass: 3.4, value: 0, load: 0, color: '#f2565c', light: '#ff8a80', dark: '#a52834', name: 'Bomba' },
   shield: {
     r: 11,
-    mass: 3.2,
+    mass: 2.2,
     value: 0,
     load: 0,
     color: '#ffffff',
@@ -119,13 +121,13 @@ const KINDS: Record<Kind, KindDef> = {
   },
   pizza: {
     r: 11,
-    mass: 3.2,
+    mass: 2.7,
     value: 0,
     load: 0,
     color: '#c7b3e3',
     light: '#e3d7f2',
     dark: '#8a6fb3',
-    name: 'Escudo pizza',
+    name: 'Super Escudo',
     blurb: 'Cada bomba rompe solo 1 porción',
   },
   // Fake gems: bombs in disguise, each the size (and by default the weight) of a real gem.
@@ -176,8 +178,8 @@ interface Phase {
  */
 const PHASES: Phase[] = [
   { at: 0, interval: 0.8, bag: { cyan: 8, mine: 2 } },
-  { at: 15, interval: 0.7, bag: { cyan: 5, yellow: 2, mine: 3 }, title: '¡NUEVA GEMA!', intro: 'yellow' },
-  { at: 35, interval: 0.6, bag: { cyan: 4, yellow: 2, pink: 1, mine: 3 }, title: '¡NUEVA GEMA!', intro: 'pink' },
+  { at: 15, interval: 0.7, bag: { cyan: 5, yellow: 2, mine: 3 }, title: '¡NUEVO CRISTAL!', intro: 'yellow' },
+  { at: 35, interval: 0.6, bag: { cyan: 4, yellow: 2, pink: 1, mine: 3 }, title: '¡NUEVO CRISTAL!', intro: 'pink' },
   {
     at: 55,
     interval: 0.5,
@@ -208,7 +210,7 @@ const PHASES: Phase[] = [
     at: 135,
     interval: 0.36,
     bag: { cyan: 2, yellow: 2, pink: 1, mine: 4, fakePink: 1 },
-    title: '¡GEMAS FALSAS!',
+    title: '¡CRISTALES FALSOS!',
     intro: 'fakePink',
     shields: ['shield', 'pizza'],
   },
@@ -241,27 +243,28 @@ const TIERS = [
 ];
 
 /**
- * Star field, generated once from a fixed seed (not Math.random) so it is the
- * same every run. A few big ones are drawn as four-point sparkles.
+ * Star field, generated once from a fixed seed (not Math.random) so it is the same every run.
+ * Stars sit on a disc around the core (x, y relative to it) because the whole field slowly turns:
+ * a disc keeps the screen corners covered at any angle. A few big ones are four-point sparkles.
  */
+const STAR_FIELD_R = 720; // covers the corners of tall phones and wide desktop windows alike
+const STAR_SPIN = (Math.PI * 2) / 240; // rad/s: one full turn every 4 minutes
 const STARS = (() => {
   let s = 20261031;
   const rnd = () => ((s = Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
-  const star = (x: number, y: number) => ({
-    x,
-    y,
-    size: rnd() < 0.05 ? 2.5 + rnd() * 1.2 : 0.6 + rnd() * 1.2,
-    phase: rnd() * Math.PI * 2,
-    speed: 0.6 + rnd() * 1.8,
+  // Same density as the original 110 stars over the 360×640 play area.
+  const count = Math.round((110 / (WIDTH * HEIGHT)) * Math.PI * STAR_FIELD_R ** 2);
+  return Array.from({ length: count }, () => {
+    const r = STAR_FIELD_R * Math.sqrt(rnd()); // sqrt: uniform over the disc, not bunched in the middle
+    const a = rnd() * Math.PI * 2;
+    return {
+      x: Math.cos(a) * r,
+      y: Math.sin(a) * r,
+      size: rnd() < 0.05 ? 2.5 + rnd() * 1.2 : 0.6 + rnd() * 1.2,
+      phase: rnd() * Math.PI * 2,
+      speed: 0.6 + rnd() * 1.8,
+    };
   });
-  const stars = Array.from({ length: 110 }, () => star(rnd() * WIDTH, rnd() * HEIGHT));
-  // Same density in the margins that taller/wider screens reveal around the play area.
-  for (let i = 0; i < 240; i++) {
-    const x = -120 + rnd() * (WIDTH + 240);
-    const y = -320 + rnd() * (HEIGHT + 640);
-    if (x < 0 || x > WIDTH || y < 0 || y > HEIGHT) stars.push(star(x, y));
-  }
-  return stars;
 })();
 
 /** Mine reds, lit to deep. Light comes from the upper left, like the gems. */
@@ -543,7 +546,7 @@ interface BurstStyle {
  */
 const RES = {
   veil: 0.3, // dark veil fades in over this long
-  lost: 0.12, // "Perdiste N gemas" drops in
+  lost: 0.12, // "Perdiste N cristales" drops in
   countStart: 0.2, // score counts up …
   countEnd: 0.75, // … and pops
   coinsStart: 0.55,
@@ -649,6 +652,8 @@ export class Growcore implements MiniGame {
   private coreR = T.coreRadius; // drawn/collision radius, eases toward target
   private gems = 0; // gems sitting in the core, not yet cashed
   private lostGems = 0; // what the last death threw away
+  private bestBefore = 0; // best score on the board when this run started (0 = no runs yet)
+  private recordAt = -1; // clock time this run passed bestBefore, or -1
   private result: RunResult | null = null; // where the last run landed on the local board
   // Every run starts at zero; finished runs go to a local board (see recordRun).
   // Falls back to the pre-rename key so returning players don't see the hint again.
@@ -768,6 +773,12 @@ export class Growcore implements MiniGame {
     this.updateFx(dt);
     this.coreR += (this.targetCoreR() - this.coreR) * Math.min(1, dt * 12);
     this.shownScore += (this.score - this.shownScore) * Math.min(1, dt * 8);
+    // Passing your best mid-run gets called out once (not on the very first run: nothing to beat).
+    if (this.state === 'playing' && this.recordAt < 0 && this.bestBefore > 0 && this.score > this.bestBefore) {
+      this.recordAt = this.clock;
+      [0, 4, 7, 12].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.2, type: 'triangle', gain: 0.12, delay: i * 0.07 }));
+      vibrate(25);
+    }
 
     if (this.state === 'playing' && press === 'pointer' && this.load > 0 && this.hitCore()) {
       this.cashOut();
@@ -911,6 +922,8 @@ export class Growcore implements MiniGame {
     this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
     this.shieldKind = null;
     this.slices = [];
+    this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
+    this.recordAt = -1;
     tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
   }
 
@@ -1026,8 +1039,9 @@ export class Growcore implements MiniGame {
     this.burst(CX, CY, k.color, 8 * k.load, 140);
     this.popup(CX + rand(-24, 24), CY - this.coreR - 10, `+${k.value}`, k.light, 12 + k.load * 2);
 
-    // Notes climb with the load: the higher the pitch, the more you risk.
-    const step = Math.min(this.load, 24);
+    // Notes climb with the load: the higher the pitch, the more you risk. The climb flattens out
+    // around 2 kHz; a straight step per load point went past 8 kHz, inaudible on phone speakers.
+    const step = Math.round(10 * (1 - Math.exp(-this.load / 14)));
     if (b.kind === 'pink') {
       tone({ freq: note(step), dur: 0.35, type: 'triangle', gain: 0.18 });
       tone({ freq: note(step + 2), dur: 0.35, type: 'triangle', gain: 0.12, delay: 0.06 });
@@ -1240,29 +1254,35 @@ export class Growcore implements MiniGame {
       ctx.drawImage(this.glow!, CX - r, CY - r, r * 2, r * 2);
     }
 
+    // The star field turns slowly around the core. Positions are rotated by hand (two multiplies
+    // per star) so off-screen stars can be skipped and sparkles stay upright.
     ctx.fillStyle = '#ffffff';
     const x1 = v.x0 + v.w;
     const y1 = v.y0 + v.h;
+    const cos = Math.cos(this.clock * STAR_SPIN);
+    const sin = Math.sin(this.clock * STAR_SPIN);
     for (const s of STARS) {
-      if (s.x < v.x0 - 8 || s.x > x1 + 8 || s.y < v.y0 - 8 || s.y > y1 + 8) continue; // off-screen
+      const x = CX + s.x * cos - s.y * sin;
+      const y = CY + s.x * sin + s.y * cos;
+      if (x < v.x0 - 8 || x > x1 + 8 || y < v.y0 - 8 || y > y1 + 8) continue; // off-screen
       ctx.globalAlpha = 0.25 + 0.5 * (0.5 + 0.5 * Math.sin(this.clock * s.speed + s.phase));
       if (s.size < 2.5) {
-        ctx.fillRect(s.x, s.y, s.size, s.size);
+        ctx.fillRect(x, y, s.size, s.size);
         continue;
       }
       // Four-point sparkle: two thin diamonds crossed.
       const l = s.size * 2.2;
       const t = s.size * 0.35;
       ctx.beginPath();
-      ctx.moveTo(s.x, s.y - l);
-      ctx.lineTo(s.x + t, s.y);
-      ctx.lineTo(s.x, s.y + l);
-      ctx.lineTo(s.x - t, s.y);
+      ctx.moveTo(x, y - l);
+      ctx.lineTo(x + t, y);
+      ctx.lineTo(x, y + l);
+      ctx.lineTo(x - t, y);
       ctx.closePath();
-      ctx.moveTo(s.x - l, s.y);
-      ctx.lineTo(s.x, s.y - t);
-      ctx.lineTo(s.x + l, s.y);
-      ctx.lineTo(s.x, s.y + t);
+      ctx.moveTo(x - l, y);
+      ctx.lineTo(x, y - t);
+      ctx.lineTo(x + l, y);
+      ctx.lineTo(x, y + t);
       ctx.closePath();
       ctx.fill();
     }
@@ -1735,7 +1755,7 @@ export class Growcore implements MiniGame {
     const rise = Math.max(0, 0.2 - t) * 50;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(CX, 146 + rise);
+    ctx.translate(CX, 136 + rise);
     this.drawBannerTag(p);
     ctx.restore();
   }
@@ -1758,13 +1778,18 @@ export class Growcore implements MiniGame {
     ctx.stroke();
   }
 
-  /** Text pieces shared by every banner style. Shields have no points, so they get a how-it-works line. */
+  /**
+   * Text pieces shared by every banner style: name, then the crystal's color word (tinted) and
+   * points. Shields and fakes have no points, so they get a how-it-works line instead.
+   */
   private bannerText(p: Phase) {
     const k = p.intro ? KINDS[p.intro] : null;
     return {
       k,
       color: k ? k.light : C.danger,
-      label: k ? (k.blurb ? k.name : `${k.name}  +${k.value}`) : '',
+      name: k ? (k.hue ? `${k.name} ` : k.name) : '',
+      hue: k?.hue ? `${k.hue}  ` : '',
+      points: k && !k.blurb ? `+${k.value}` : '',
       blurb: k?.blurb ?? '',
     };
   }
@@ -1790,12 +1815,14 @@ export class Growcore implements MiniGame {
   /** Phase banner: rounded dark label, small spaced title on top, icon + name + points under it. */
   private drawBannerTag(p: Phase) {
     const { ctx } = this;
-    const { k, color, label, blurb } = this.bannerText(p);
-    const tf = font(700, 14);
+    const { k, color, name, hue, points, blurb } = this.bannerText(p);
+    const tf = font(700, 12);
     const lf = font(600, 15);
     const bf = font(400, 12);
     const tw = this.measure(p.title!, tf, 3);
-    const lw = k ? this.measure(label, lf) + 26 : 0;
+    const nameW = this.measure(name, lf);
+    const hueW = this.measure(hue, lf);
+    const lw = k ? nameW + hueW + this.measure(points, lf) + 26 : 0;
     const bw = blurb ? this.measure(blurb, bf) : 0;
     const w = Math.max(tw, lw, bw) + 36;
     const h = k ? (blurb ? 80 : 60) : 36;
@@ -1805,14 +1832,19 @@ export class Growcore implements MiniGame {
     ctx.fillStyle = color;
     ctx.font = tf;
     this.spaced(3);
-    ctx.fillText(p.title!, 0, k ? 0 : 1);
+    ctx.fillText(p.title!, 0, k ? -1 : 1);
     this.spaced(0);
     if (!k) return;
     this.drawIcon(p.intro!, -lw / 2 + 8, 19, 0.8);
     ctx.textAlign = 'left';
-    ctx.fillStyle = C.ink;
     ctx.font = lf;
-    ctx.fillText(label, -lw / 2 + 24, 25);
+    const x = -lw / 2 + 24;
+    ctx.fillStyle = C.ink;
+    ctx.fillText(name, x, 25);
+    ctx.fillStyle = color;
+    ctx.fillText(hue, x + nameW, 25);
+    ctx.fillStyle = C.ink;
+    ctx.fillText(points, x + nameW + hueW, 25);
     if (blurb) {
       ctx.textAlign = 'center';
       ctx.fillStyle = C.inkSoft;
@@ -1842,10 +1874,29 @@ export class Growcore implements MiniGame {
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 44);
       ctx.fillText(String(Math.round(this.shownScore)), CX, 72);
+      if (this.recordAt >= 0) this.drawRecordTag();
       this.drawPhase();
     }
 
     if (this.state === 'over') this.drawResults();
+  }
+
+  /** "RÉCORD ALCANZADO" above the score: pops in when the run passes the best, then stays. */
+  private drawRecordTag() {
+    const { ctx } = this;
+    const t = this.clock - this.recordAt;
+    const s = 1 + pop(t) * 2;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, t * 5);
+    ctx.translate(CX, 24);
+    ctx.scale(s, s);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = C.gold;
+    ctx.font = font(700, 11);
+    this.spaced(2.5);
+    ctx.fillText('RÉCORD ALCANZADO', 0, 0);
+    this.spaced(0);
+    ctx.restore();
   }
 
   /**
@@ -1868,7 +1919,7 @@ export class Growcore implements MiniGame {
       ctx.fillStyle = C.danger;
       ctx.font = font(600, 15);
       const drop = (1 - easeOutCubic(a)) * -12;
-      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'gema' : 'gemas'}`, CX, 104 + drop);
+      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'cristal' : 'cristales'}`, CX, 104 + drop);
       ctx.globalAlpha = 1;
     }
 
