@@ -668,7 +668,7 @@ export class Growcore implements MiniGame {
   // Falls back to the pre-rename key so returning players don't see the hint again.
   private cashedOnce = loadNumber('growcore.cashedOnce') === 1 || loadNumber('iman.cashedOnce') === 1;
   private holding = false;
-  private holdBlocked = false; // a press that cashed out shouldn't also pull
+  private holdBlocked = false; // a press that cashed out (or started the run) shouldn't also pull
   private overAt = 0;
   private introAt = Infinity; // clock time the start-screen animation began (set once fonts load)
   private fontsReady = false;
@@ -949,6 +949,9 @@ export class Growcore implements MiniGame {
 
   private start() {
     this.state = 'playing';
+    // The tap that starts the run is not a pull: the field waits until the finger lifts.
+    this.holdBlocked = true;
+    this.holding = false;
     music.level = LEVEL_BY_PHASE[0];
     music.play(DRIVE, { fade: 0.15 });
     // The bed stays, ducked and stripped to a drone, under the in-game loop.
