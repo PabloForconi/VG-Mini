@@ -599,18 +599,40 @@ const INTRO = {
 
 /**
  * The core powers on at the start of a run like an old TV, in seconds after the start tap:
- * a horizontal and a vertical beam of light close in on the center, meet in a bright point,
- * and the point swells into the core.
+ * a big cross of light collapses onto the center, bouncing a few times before it settles into
+ * a point; the point springs out into the core and the vortex motes spring out of it to their
+ * orbits.
  */
 const BOOT = {
-  beams: 0.3, // beams shrink toward the center
-  spark: 0.12, // they meet: a four-point spark
-  grow: 0.35, // the spark swells into the core, overshooting a little
-  beamLen: 240, // half-length of each beam when it appears
+  beams: 0.6, // the cross collapses, bouncing (see bounceOut)
+  beamLen: 240, // half-length of each arm at the start
+  beamWidth: 6, // arm thickness at the start; thins down as it closes
+  grow: 0.75, // the point springs out into the core, wobbling to rest
+  motesStagger: 0.25, // the last mote leaves the center this long after the first
 };
-const BOOT_END = BOOT.beams + BOOT.spark + BOOT.grow;
+const BOOT_END = BOOT.beams + BOOT.grow;
+/** Bounce times (fraction of BOOT.beams) where the collapsing cross hits the center. */
+const BOOT_HITS = [1 / 2.75, 2 / 2.75, 2.5 / 2.75];
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+/** 0 → 1 like a ball dropped onto the floor: three bounces, each a quarter as high. */
+const bounceOut = (x: number) => {
+  const n = 7.5625;
+  const d = 2.75;
+  if (x < 1 / d) return n * x * x;
+  if (x < 2 / d) return n * (x - 1.5 / d) ** 2 + 0.75;
+  if (x < 2.5 / d) return n * (x - 2.25 / d) ** 2 + 0.9375;
+  return Math.min(1, n * (x - 2.625 / d) ** 2 + 0.984375);
+};
+/**
+ * A damped spring released from 0 toward 1, `t` seconds in: overshoots and wobbles to rest.
+ * `w` is its stiffness (angular frequency), `z` its damping (lower = bouncier).
+ */
+const spring = (t: number, w = 16, z = 0.3) => {
+  if (t <= 0) return 0;
+  const wd = w * Math.sqrt(1 - z * z);
+  return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + ((z * w) / wd) * Math.sin(wd * t));
+};
 const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
 /** Overshoots a little before settling: things "land". */
 const easeOutBack = (x: number) => 1 + 2.7 * (x - 1) ** 3 + 1.7 * (x - 1) ** 2;
@@ -1022,7 +1044,10 @@ export class Growcore implements MiniGame {
     this.slices = [];
     this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
     this.recordAt = -1;
-    sfx.startSfx();
+    sfx.startSfx(
+      BOOT_HITS.map((h) => h * BOOT.beams),
+      BOOT.beams,
+    );
   }
 
   private enterPhase(i: number) {
@@ -1409,14 +1434,16 @@ export class Growcore implements MiniGame {
     return this.coreR + 2 + (1 - this.moteFall(i)) * reach;
   }
 
-  private drawVortex() {
+  /** `booting`: seconds since the core started growing; motes spring out of its center. */
+  private drawVortex(booting = Infinity) {
     const { ctx } = this;
     // Motes wear the core's own tier colors (its fill, glow and shade), so they read as part of it.
     const tier = TIERS[this.tierIndex];
     const colors = [tier.top, tier.left, tier.top, tier.right];
     for (let i = 0; i < VORTEX.count; i++) {
       const u = this.moteFall(i);
-      const r = this.moteRadius(i);
+      const out = booting < BOOT_END ? spring(booting - (i / VORTEX.count) * BOOT.motesStagger, 14, 0.35) : 1;
+      const r = this.moteRadius(i) * out;
       // Orbit angle comes from the physics; the curl term keeps a spiral as motes fall in.
       const a = this.moteAngles[i] + u * VORTEX.curl;
       ctx.globalAlpha = Math.min(1, u * 4) * Math.min(1, (1 - u) * 5) * 0.9;
@@ -1654,21 +1681,26 @@ export class Growcore implements MiniGame {
     if (!glow) this.coreGlows.set(C.white, (glow = buildCoreGlow(C.white)));
 
     if (t < BOOT.beams) {
-      // Two thin beams shrink onto the center, brightening (and flickering a touch) as they go.
+      // A big cross collapses onto the center like a dropped ball: it hits, springs back out a
+      // little, hits again… and settles into a point that brightens as it gathers.
       const u = t / BOOT.beams;
-      const len = BOOT.beamLen * (1 - u * u) + 4;
-      const a = Math.min(1, u * 3) * (0.85 + Math.random() * 0.15);
+      const open = 1 - bounceOut(u); // 1 = full cross … 0 = a point
+      const len = BOOT.beamLen * open + 3;
+      const a = Math.min(1, t / 0.05) * (0.85 + Math.random() * 0.15);
+      const gr = 10 + 14 * u;
+      ctx.drawImage(glow, CX - gr, CY - gr, gr * 2, gr * 2);
+      ctx.lineCap = 'round';
       for (const [dx, dy] of [[1, 0], [0, 1]]) {
         const g = ctx.createLinearGradient(CX - dx * len, CY - dy * len, CX + dx * len, CY + dy * len);
         g.addColorStop(0, 'rgba(255,255,255,0)');
         g.addColorStop(0.5, '#ffffff');
         g.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.strokeStyle = g;
-        ctx.lineCap = 'round';
-        // A wide faint stroke under a thin bright one: the beam's glow (no blur).
-        for (const [w, alpha] of [[7, 0.18], [1.5 + u * 1.5, 1]]) {
+        // A wide faint stroke under a bright one: the beam's glow (no blur).
+        const w = 1.5 + BOOT.beamWidth * open;
+        for (const [width, alpha] of [[w + 6, 0.2], [w, 1]]) {
           ctx.globalAlpha = a * alpha;
-          ctx.lineWidth = w;
+          ctx.lineWidth = width;
           ctx.beginPath();
           ctx.moveTo(CX - dx * len, CY - dy * len);
           ctx.lineTo(CX + dx * len, CY + dy * len);
@@ -1677,45 +1709,25 @@ export class Growcore implements MiniGame {
       }
       ctx.lineCap = 'butt';
       ctx.globalAlpha = 1;
-      return;
-    }
-
-    if (t < BOOT.beams + BOOT.spark) {
-      // They meet: a four-point spark that flares and pulls back in to a hot dot.
-      const u = (t - BOOT.beams) / BOOT.spark;
-      const gr = 18 + 22 * (1 - u);
-      ctx.drawImage(glow, CX - gr, CY - gr, gr * 2, gr * 2);
-      const l = 40 * (1 - u) + 7;
-      const w = 3;
       ctx.fillStyle = C.white;
-      ctx.beginPath();
-      ctx.moveTo(CX, CY - l);
-      ctx.lineTo(CX + w, CY);
-      ctx.lineTo(CX, CY + l);
-      ctx.lineTo(CX - w, CY);
-      ctx.closePath();
-      ctx.moveTo(CX - l, CY);
-      ctx.lineTo(CX, CY - w);
-      ctx.lineTo(CX + l, CY);
-      ctx.lineTo(CX, CY + w);
-      ctx.closePath();
-      ctx.fill();
       ctx.beginPath();
       ctx.arc(CX, CY, 3, 0, Math.PI * 2);
       ctx.fill();
       return;
     }
 
-    // The dot swells into the core, white-hot at first and cooling to its own color.
-    const u = (t - BOOT.beams - BOOT.spark) / BOOT.grow;
-    const s = Math.max(3 / this.coreR, easeOutBack(u));
+    // The point springs out into the core, white-hot at first and cooling to its own color,
+    // and the vortex motes spring out of its center to their orbits.
+    const tg = t - BOOT.beams;
+    const s = Math.max(3 / this.coreR, spring(tg));
+    this.drawVortex(tg);
     ctx.save();
     ctx.translate(CX, CY);
     ctx.scale(s, s);
     ctx.translate(-CX, -CY);
     this.drawCore(false);
     ctx.restore();
-    ctx.globalAlpha = (1 - u) ** 2;
+    ctx.globalAlpha = clamp01(1 - tg / 0.35) ** 2;
     ctx.fillStyle = C.white;
     ctx.beginPath();
     ctx.arc(CX, CY, this.coreR * s, 0, Math.PI * 2);

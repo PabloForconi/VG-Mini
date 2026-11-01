@@ -96,14 +96,17 @@ export function phaseSfx() {
 
 /**
  * Tap to play: the core powers on like an old TV (timed to BOOT in growcore.ts). A thin whine
- * climbs as the two beams close in, a high bell rings when they meet in a point, and a low
- * tone swells up as the point grows into the core.
+ * climbs as the cross closes in, a bell rings on each bounce (softer each time), a low tone
+ * swells as the point springs out into the core, and a sprinkle of high notes follows the
+ * vortex motes out.
+ * `hits`: seconds of each bounce; `grow`: when the core starts growing.
  */
-export function startSfx() {
-  whoosh(900, 5000, 0.3, 0.05);
-  tone({ freq: 1400, to: 2800, dur: 0.32, type: 'sine', gain: 0.02, attack: 0.28, wet: 0.4 });
-  bell(note(12), { gain: 0.09, dur: 1.4, delay: 0.3, wet: 0.7 });
-  tone({ freq: 98, to: 196, dur: 0.6, type: 'sine', gain: 0.12, attack: 0.08, delay: 0.38, wet: 0.5 });
+export function startSfx(hits: number[], grow: number) {
+  whoosh(900, 5000, hits[0], 0.05);
+  tone({ freq: 1400, to: 2800, dur: hits[0] + 0.02, type: 'sine', gain: 0.02, attack: hits[0] * 0.9, wet: 0.4 });
+  hits.forEach((at, i) => bell(note(12 - i), { gain: 0.09 / (i * 1.5 + 1), dur: 1.2, delay: at, wet: 0.7 }));
+  tone({ freq: 98, to: 196, dur: 0.6, type: 'sine', gain: 0.12, attack: 0.05, delay: grow, wet: 0.5 });
+  [0, 2, 4, 7].forEach((s, i) => bell(note(s + 10), { gain: 0.025, dur: 0.8, delay: grow + 0.08 + i * 0.06, wet: 0.8 }));
 }
 
 /** Hit by a bomb: a low boom with a long tail in the hall. */
