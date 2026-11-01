@@ -599,14 +599,14 @@ const INTRO = {
 
 /**
  * The core powers on at the start of a run like an old TV, in two moves (seconds after the
- * start tap): a big cross of light closes onto the center, slowly at first and faster and
- * faster, into a point; then the point bursts open into the core like a small big bang,
+ * start tap): a big cross of light shoots in onto the center, slowing as it closes, into a
+ * point; then the point bursts open into the core like a small big bang,
  * springing past its size and settling, while the vortex motes fly out of it to their orbits.
  */
 const BOOT = {
   beams: 0.4, // the cross closes, accelerating
   beamReach: 80, // the arms (long triangles) start this far past the screen's edges
-  beamWidth: 22, // half-width of each arm's base at the start …
+  beamWidth: 10, // half-width of each arm's base at the start …
   beamEndWidth: 1, // … thinning down to this as it closes; it ends as long as the core's radius
   flash: 0.3, // a white flash over the whole screen as it all starts, fading out
   grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
@@ -633,6 +633,9 @@ const pop = (since: number) => (since >= 0 && since < 0.3 ? 0.18 * (1 - since / 
 /** Catch sparks stay close to the core; cash-outs fling far so they feel like a payout. */
 const SPARKS: BurstStyle = { drag: 0.92, life: [0.3, 0.7], size: [2, 4] };
 const PAYOUT: BurstStyle = { drag: 0.965, life: [0.6, 1.1], size: [2.5, 4.5] };
+
+/** Floating texts ("+5", "¡CERCA!", "¡ESCUDO!"…) draw at this fraction of their given size. */
+const POPUP_SCALE = 0.85;
 
 interface Popup {
   x: number;
@@ -1340,14 +1343,9 @@ export class Growcore implements MiniGame {
     }
 
     ctx.textAlign = 'center';
-    ctx.lineJoin = 'round';
     for (const p of this.popups) {
       ctx.globalAlpha = Math.min(1, p.life * 2);
-      ctx.font = font(700, p.size);
-      // Dark halo keeps popups legible over stars and glows.
-      ctx.strokeStyle = 'rgba(12,10,29,0.75)';
-      ctx.lineWidth = 4;
-      ctx.strokeText(p.text, p.x, p.y);
+      ctx.font = font(700, Math.round(p.size * POPUP_SCALE));
       ctx.fillStyle = p.color;
       ctx.fillText(p.text, p.x, p.y);
     }
@@ -1681,10 +1679,10 @@ export class Growcore implements MiniGame {
 
     if (t < BOOT.beams) {
       // A star of four long, wide triangles (their bases overlap so the center is covered)
-      // closes in from past the screen's edges, faster and faster: the arms squash shorter and
-      // thinner until it is a small, sharp star about the size of the newborn core.
+      // shoots in from past the screen's edges and slows as it closes: the arms squash shorter
+      // and thinner until it is a small, sharp star about the size of the newborn core.
       const u = t / BOOT.beams;
-      const open = 1 - u * u; // 1 = full star … 0 = closed
+      const open = (1 - u) ** 2; // 1 = full star … 0 = closed
       const start = Math.max(VIEW.w, VIEW.h) / 2 + BOOT.beamReach;
       const len = this.coreR + (start - this.coreR) * open;
       const w = BOOT.beamEndWidth + (BOOT.beamWidth - BOOT.beamEndWidth) * open;
