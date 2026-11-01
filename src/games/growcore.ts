@@ -1,6 +1,8 @@
 import { Drone, isMuted, noise, setMuted, tone, vibrate } from '../engine/audio';
 import { isHolding, pointer, takePress } from '../engine/input';
+import { music } from '../engine/music';
 import { loadJSON, loadNumber, saveJSON, saveNumber } from '../engine/storage';
+import { CALM, DRIVE, LEVEL_BY_PHASE, loseStinger, zeroPointsFx } from './growcore-music';
 import { HEIGHT, VIEW, WIDTH, toGame, type MiniGame } from './MiniGame';
 
 /**
@@ -694,6 +696,8 @@ export class Growcore implements MiniGame {
       saveJSON(RUNS_KEY, []);
       saveNumber(BOARD_VERSION_KEY, BOARD_VERSION);
     }
+    // Waits for the first tap to unlock audio, which on a fresh load is also the tap that starts.
+    music.play(CALM, { fade: 1.5 });
   }
 
   private get tierIndex() {
@@ -913,6 +917,8 @@ export class Growcore implements MiniGame {
 
   private start() {
     this.state = 'playing';
+    music.level = LEVEL_BY_PHASE[0];
+    music.play(DRIVE, { fade: 0.15 });
     this.bodies = [];
     this.time = 0;
     this.spawnTimer = 0.3;
@@ -939,6 +945,7 @@ export class Growcore implements MiniGame {
   private enterPhase(i: number) {
     const p = PHASES[i];
     this.phase = i;
+    music.level = LEVEL_BY_PHASE[Math.min(i, LEVEL_BY_PHASE.length - 1)];
     // New item goes first so it shows up right away (see nextKind).
     this.introNext = p.intro ?? null;
     this.bag = [];
@@ -1116,6 +1123,12 @@ export class Growcore implements MiniGame {
     noise(0.6, 0.5, 2000);
     tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
     vibrate([60, 40, 120]);
+    // The music cuts dead; a run with no points at all gets the sad trombone instead of the stinger.
+    // The calm loop comes back once the results have settled.
+    music.stop(0.04);
+    if (this.score === 0) zeroPointsFx();
+    else loseStinger();
+    music.play(CALM, { delay: this.score === 0 ? 2.8 : 2.2, fade: 2 });
   }
 
   /** Saves this run to the local board (kept best-first) and works out where it landed. */

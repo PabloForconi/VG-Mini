@@ -35,6 +35,11 @@ export function setMuted(value: boolean) {
 
 export const isMuted = () => muted;
 
+/** The live context and master bus, or null until the first gesture unlocks audio. */
+export function getAudio() {
+  return ac && master ? { ac, master } : null;
+}
+
 interface ToneOptions {
   freq: number;
   to?: number; // pitch slide target
@@ -42,43 +47,90 @@ interface ToneOptions {
   type?: OscillatorType;
   gain?: number;
   delay?: number;
+  attack?: number; // seconds to reach full volume (soft pads want more than a click)
+  filter?: number; // lowpass cutoff in Hz, to tame bright waves
+  vibrato?: number; // depth in Hz of a 6 Hz wobble
+  dest?: AudioNode; // defaults to the master bus (music passes its own)
 }
 
 /** One-shot oscillator with a quick attack and exponential release. */
-export function tone({ freq, to, dur = 0.12, type = 'sine', gain = 0.2, delay = 0 }: ToneOptions) {
+export function tone({
+  freq,
+  to,
+  dur = 0.12,
+  type = 'sine',
+  gain = 0.2,
+  delay = 0,
+  attack = 0.005,
+  filter,
+  vibrato,
+  dest,
+}: ToneOptions) {
   if (!ac || !master) return;
   const t = ac.currentTime + delay;
+  const end = t + dur + 0.02;
   const osc = ac.createOscillator();
   const env = ac.createGain();
   osc.type = type;
   osc.frequency.setValueAtTime(freq, t);
   if (to) osc.frequency.exponentialRampToValueAtTime(to, t + dur);
   env.gain.setValueAtTime(0, t);
-  env.gain.linearRampToValueAtTime(gain, t + 0.005);
+  env.gain.linearRampToValueAtTime(gain, t + attack);
   env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(env).connect(master);
+  let out: AudioNode = osc;
+  if (filter) {
+    const lp = ac.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = filter;
+    out = out.connect(lp);
+  }
+  if (vibrato) {
+    const lfo = ac.createOscillator();
+    const depth = ac.createGain();
+    lfo.frequency.value = 6;
+    depth.gain.value = vibrato;
+    lfo.connect(depth).connect(osc.frequency);
+    lfo.start(t);
+    lfo.stop(end);
+  }
+  out.connect(env).connect(dest ?? master);
   osc.start(t);
-  osc.stop(t + dur + 0.02);
+  osc.stop(end);
 }
 
-/** Filtered white-noise burst (explosions, impacts). */
-export function noise(dur = 0.4, gain = 0.4, cutoff = 1200) {
+/** One second of white noise, made once and shared by every burst (hats fire many times a second). */
+let noiseBuf: AudioBuffer | null = null;
+function noiseBuffer(ctx: AudioContext) {
+  if (!noiseBuf) {
+    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  }
+  return noiseBuf;
+}
+
+interface NoiseOptions {
+  delay?: number;
+  type?: BiquadFilterType; // lowpass sweeps down (impacts); highpass/bandpass stay put (hats, claps)
+  dest?: AudioNode;
+}
+
+/** Filtered white-noise burst (explosions, impacts, and the music's hats and claps). */
+export function noise(dur = 0.4, gain = 0.4, cutoff = 1200, { delay = 0, type = 'lowpass', dest }: NoiseOptions = {}) {
   if (!ac || !master) return;
-  const t = ac.currentTime;
-  const buf = ac.createBuffer(1, Math.ceil(ac.sampleRate * dur), ac.sampleRate);
-  const data = buf.getChannelData(0);
-  for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+  const t = ac.currentTime + delay;
+  const len = Math.min(dur, 0.99);
   const src = ac.createBufferSource();
-  src.buffer = buf;
+  src.buffer = noiseBuffer(ac);
   const filter = ac.createBiquadFilter();
-  filter.type = 'lowpass';
+  filter.type = type;
   filter.frequency.setValueAtTime(cutoff, t);
-  filter.frequency.exponentialRampToValueAtTime(80, t + dur);
+  if (type === 'lowpass') filter.frequency.exponentialRampToValueAtTime(80, t + len);
   const env = ac.createGain();
   env.gain.setValueAtTime(gain, t);
-  env.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(filter).connect(env).connect(master);
-  src.start(t);
+  env.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  src.connect(filter).connect(env).connect(dest ?? master);
+  src.start(t, Math.random() * (1 - len), len);
 }
 
 /** A sustained voice whose pitch and volume can be steered every frame. */

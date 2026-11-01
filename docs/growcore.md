@@ -122,6 +122,22 @@ edilicias.**
 Los colores están en `C`, `KINDS` y `TIERS` de
 [`src/games/growcore.ts`](../src/games/growcore.ts); el cielo en `STARS` y `NEBULAE`.
 
+## Música
+
+Toda la música es sintetizada en vivo (WebAudio, sin archivos), en La menor sobre
+La m – Fa – Do – Sol, así comparte notas con los "tink" de captura (pentatónica de Do)
+y nunca desafina contra ellos. Código: `src/engine/music.ts` (secuenciador) y
+`src/games/growcore-music.ts` (los temas).
+
+| Momento | Música |
+| --- | --- |
+| Inicio y resultados | **Calma**: 72 BPM, colchón suave por compás, bajo senoidal y un arpegio tipo caja de música con eco. 8 compases (~27 s). |
+| Partida | **Empuje**: 124 BPM, bombo en negras y bajo en octavas. Suma capas con la fase: hi-hats desde el Escudo (fase 3), melodía en semicorcheas desde el Super Escudo (fase 5), palmas y hi-hats rodando en ¡CAOS! (fase 6+). |
+| Al perder | La música se corta en seco y suena un **stinger** (tríada menor que cae + golpe grave). Si perdiste con **0 puntos**, en vez del stinger suena un "wah wah wah waaah" triste. A los ~2 s vuelve la Calma en la pantalla de resultados. |
+
+El navegador no deja sonar nada hasta el primer toque, así que en la primera carga
+el inicio está en silencio (ese mismo toque arranca la partida).
+
 ## Por qué engancha
 
 | Gancho | Cómo aparece en el juego |
@@ -230,7 +246,8 @@ el tiempo también apriete (por ejemplo, minas que apuntan más cerca del núcle
 
 ## Próximos pasos del prototipo
 
-- [ ] Sonido: zumbido del campo que sube de tono mientras mantenés; "tink" por captura, cada vez más agudo con el combo.
+- [x] Sonido: zumbido del campo que sube de tono mientras mantenés; "tink" por captura, cada vez más agudo con la carga (se aplana cerca de 2 kHz para que se oiga en el celular).
+- [x] Música: ver la sección *Música*.
 - [ ] Vibración (`navigator.vibrate`) en casi-muertes y en la muerte.
 - [ ] Prototipo de la segunda oportunidad (sin SDK de anuncios, solo el flujo).
 - [ ] Probar variantes: minas que *repelen* al soltar, gemas que solo valen si llegan seguidas.
