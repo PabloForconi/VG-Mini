@@ -179,13 +179,22 @@ interface Phase {
 const PHASES: Phase[] = [
   { at: 0, interval: 0.8, bag: { cyan: 8, mine: 2 } },
   { at: 15, interval: 0.7, bag: { cyan: 5, yellow: 2, mine: 3 }, title: '¡NUEVO CRISTAL!', intro: 'yellow' },
-  { at: 35, interval: 0.6, bag: { cyan: 4, yellow: 2, pink: 1, mine: 3 }, title: '¡NUEVO CRISTAL!', intro: 'pink' },
+  // The plain shield comes before rhodonite: it weighs between citrine and rhodonite, and the
+  // first protection lands just before the riskiest catch shows up.
+  {
+    at: 35,
+    interval: 0.6,
+    bag: { cyan: 4, yellow: 2, mine: 4 },
+    title: '¡NUEVO ESCUDO!',
+    intro: 'shield',
+    shields: ['shield'],
+  },
   {
     at: 55,
     interval: 0.5,
     bag: { cyan: 3, yellow: 2, pink: 1, mine: 4 },
-    title: '¡NUEVO ESCUDO!',
-    intro: 'shield',
+    title: '¡NUEVO CRISTAL!',
+    intro: 'pink',
     shields: ['shield'],
   },
   {

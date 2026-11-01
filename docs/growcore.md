@@ -46,8 +46,8 @@ puntaje, se ve "FASE N".
 | --- | --- | --- | --- | --- |
 | 1 | 0 s | 8 celestes, 2 minas | 0,8 s | — |
 | 2 — ¡NUEVO CRISTAL! Citrino | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — |
-| 3 — ¡NUEVO CRISTAL! Rodonita | 35 s | 4 celestes, 2 amarillas, 1 rosa, 3 minas | 0,6 s | — |
-| 4 — ¡NUEVO ESCUDO! simple | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple |
+| 3 — ¡NUEVO ESCUDO! Escudo | 35 s | 4 celestes, 2 amarillas, 4 minas | 0,6 s | simple |
+| 4 — ¡NUEVO CRISTAL! Rodonita | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple |
 | 5 — ¡NUEVO ESCUDO! Super Escudo | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza |
 | 6 — ¡CAOS! | 105 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s | simple o pizza |
 | 7 — ¡CRISTALES FALSOS! | 135 s | 2 celestes, 2 amarillas, 1 rosa, 4 minas, 1 falsa grande | 0,36 s | simple o pizza |
@@ -85,7 +85,7 @@ aparece una burbuja alrededor del núcleo que crece con él.
 | Escudo | redondo blanco | La primera mina que toca la burbuja explota sin hacerte nada; la burbuja se rompe. |
 | Super Escudo (pizza) | redondo, 6 porciones que cambian de color | La burbuja (blanca, como la del simple) tiene 6 porciones. Una mina rompe solo la porción por donde entra; las otras siguen protegiendo. Una mina que entra por un hueco te toca. |
 
-- El primero de cada tipo llega con su cartel (Escudo a los 55 s, Super Escudo a los 80 s). Después caen al azar cada 10–18 s.
+- El primero de cada tipo llega con su cartel (Escudo a los 35 s, Super Escudo a los 80 s). El Escudo va antes que la Rodonita: por peso queda entre Citrino y Rodonita, y la primera protección llega justo antes de la jugada más riesgosa. Después caen al azar cada 10–18 s.
 - Agarrar un escudo teniendo otro lo reemplaza por el nuevo, completo.
 - Cobrar no saca el escudo; morir sí.
 
