@@ -128,7 +128,7 @@ edilicias.**
 - **Núcleo**: círculo pastel con brillo, que cambia de tono con el tramo (crema → menta → verde agua → dorado → coral). El número va en tinta oscura.
 - **Gemas**: cristales facetados en dos tonos, sin giro, con brillo suave de su color. Mientras el imán las arrastra **se inclinan hacia donde van** (más rápido = más inclinación: celeste hasta 20°, amarilla ~13°, rosa ~6°) y al soltar vuelven a quedar derechas (`tiltMax`, `tiltSpeed`).
 - **Minas**: silueta de mina naval **facetada en rojos** (cuerpo tallado en 8 caras, 8 pinchos piramidales y un centro redondo), con sombreado plano y la luz siempre arriba a la izquierda aunque gire. Late apenas y tiene un halo rojo tenue. Se pre-dibuja como imagen en 16 pasos de giro (ver *Rendimiento*).
-- **Encendido**: al empezar cada partida el núcleo se prende como una tele vieja (`BOOT`, ~1,35 s), todo con rebote: una cruz de luz grande se cierra hacia el centro como una pelota que cae (pega, rebota un poco, pega de nuevo… `bounceOut`) hasta quedar en un punto; el punto sale como un resorte hasta ser el núcleo (se pasa, vuelve, se asienta; `spring`), primero blanco y enfriándose a su color, y los puntitos del remolino salen del centro uno tras otro y se acomodan en su órbita con el mismo resorte.
+- **Encendido**: al empezar cada partida el núcleo se prende como una tele vieja (`BOOT`, ~1,15 s), en dos movimientos. Primero una cruz de luz grande se cierra hacia el centro, lenta al principio y cada vez más rápido, hasta quedar en un punto. Después, el big bang: el punto se abre de golpe en el núcleo con un resorte duro (se pasa, vuelve, se asienta; `spring`), primero blanco y enfriándose a su color, suelta un anillo fino de luz, y los puntitos del remolino salen disparados del centro y se acomodan en su órbita.
 - **Cobro**: las partículas del cobro salen disparadas lejos (en un cobro grande llegan a los bordes); las de cada captura quedan cerca del núcleo. La onda expansiva se ve como un anillo del color del tramo que se abre, se afina y se apaga.
 - **Escudos**: burbujas blancas con brillo. El ícono pizza es de un solo color plano que cambia suave en ciclo (blanco → rosa → amarillo → verde → celeste → lila), sin divisiones: la misma burbuja transparente que el simple, pero teñida (relleno y borde) con el color que va cambiando.
 - **Texto**: Josefin Sans en tonos claros, títulos con espaciado amplio.
@@ -156,7 +156,7 @@ y `src/games/growcore-sfx.ts` (efectos).
 | Efecto | Sonido |
 | --- | --- |
 | Título | Cada letra que cae suena como una campana; juntas hacen una escala que sube. |
-| Encendido del núcleo | Un silbido fino que sube mientras la cruz se cierra, una campana en cada rebote (cada una más suave y más grave), un tono grave que crece con el núcleo y un rocío de notas agudas cuando salen los puntitos del remolino. |
+| Encendido del núcleo | Dos sonidos. "Chuiiin": un silbido que sube cada vez más mientras la cruz se cierra. "Chuuun": el big bang, un golpe grave que cae con una cola larga de reverb cuando se abre el núcleo. |
 | Atraer | Un coro lejano (acorde abierto La–Mi) que se abre, brilla y sube un poco mientras mantenés. |
 | Captura | Campana (Celestina), dos campanas (Citrino), tres campanas y un destello (Rodonita). La nota sube con la carga. |
 | Cobro | Cascada de campanas, más larga cuanto más alto el tramo, sobre un golpe grave suave, y una ráfaga de aire que sale con la onda (más larga y llena cuanto más grande el núcleo). |

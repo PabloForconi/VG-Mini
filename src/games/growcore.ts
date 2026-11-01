@@ -598,32 +598,21 @@ const INTRO = {
 };
 
 /**
- * The core powers on at the start of a run like an old TV, in seconds after the start tap:
- * a big cross of light collapses onto the center, bouncing a few times before it settles into
- * a point; the point springs out into the core and the vortex motes spring out of it to their
- * orbits.
+ * The core powers on at the start of a run like an old TV, in two moves (seconds after the
+ * start tap): a big cross of light closes onto the center, slowly at first and faster and
+ * faster, into a point; then the point bursts open into the core like a small big bang,
+ * springing past its size and settling, while the vortex motes fly out of it to their orbits.
  */
 const BOOT = {
-  beams: 0.6, // the cross collapses, bouncing (see bounceOut)
+  beams: 0.55, // the cross closes, accelerating
   beamLen: 240, // half-length of each arm at the start
   beamWidth: 6, // arm thickness at the start; thins down as it closes
-  grow: 0.75, // the point springs out into the core, wobbling to rest
-  motesStagger: 0.25, // the last mote leaves the center this long after the first
+  grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
+  motesStagger: 0.12, // the last mote leaves the center this long after the first
 };
 const BOOT_END = BOOT.beams + BOOT.grow;
-/** Bounce times (fraction of BOOT.beams) where the collapsing cross hits the center. */
-const BOOT_HITS = [1 / 2.75, 2 / 2.75, 2.5 / 2.75];
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
-/** 0 → 1 like a ball dropped onto the floor: three bounces, each a quarter as high. */
-const bounceOut = (x: number) => {
-  const n = 7.5625;
-  const d = 2.75;
-  if (x < 1 / d) return n * x * x;
-  if (x < 2 / d) return n * (x - 1.5 / d) ** 2 + 0.75;
-  if (x < 2.5 / d) return n * (x - 2.25 / d) ** 2 + 0.9375;
-  return Math.min(1, n * (x - 2.625 / d) ** 2 + 0.984375);
-};
 /**
  * A damped spring released from 0 toward 1, `t` seconds in: overshoots and wobbles to rest.
  * `w` is its stiffness (angular frequency), `z` its damping (lower = bouncier).
@@ -1044,10 +1033,7 @@ export class Growcore implements MiniGame {
     this.slices = [];
     this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
     this.recordAt = -1;
-    sfx.startSfx(
-      BOOT_HITS.map((h) => h * BOOT.beams),
-      BOOT.beams,
-    );
+    sfx.startSfx(BOOT.beams);
   }
 
   private enterPhase(i: number) {
@@ -1442,7 +1428,7 @@ export class Growcore implements MiniGame {
     const colors = [tier.top, tier.left, tier.top, tier.right];
     for (let i = 0; i < VORTEX.count; i++) {
       const u = this.moteFall(i);
-      const out = booting < BOOT_END ? spring(booting - (i / VORTEX.count) * BOOT.motesStagger, 14, 0.35) : 1;
+      const out = booting < BOOT_END ? spring(booting - (i / VORTEX.count) * BOOT.motesStagger, 22, 0.35) : 1;
       const r = this.moteRadius(i) * out;
       // Orbit angle comes from the physics; the curl term keeps a spiral as motes fall in.
       const a = this.moteAngles[i] + u * VORTEX.curl;
@@ -1681,10 +1667,10 @@ export class Growcore implements MiniGame {
     if (!glow) this.coreGlows.set(C.white, (glow = buildCoreGlow(C.white)));
 
     if (t < BOOT.beams) {
-      // A big cross collapses onto the center like a dropped ball: it hits, springs back out a
-      // little, hits again… and settles into a point that brightens as it gathers.
+      // A big cross closes onto the center, slow at first and faster and faster, into a point
+      // that brightens as it gathers.
       const u = t / BOOT.beams;
-      const open = 1 - bounceOut(u); // 1 = full cross … 0 = a point
+      const open = 1 - u ** 3; // 1 = full cross … 0 = a point
       const len = BOOT.beamLen * open + 3;
       const a = Math.min(1, t / 0.05) * (0.85 + Math.random() * 0.15);
       const gr = 10 + 14 * u;
@@ -1716,10 +1702,22 @@ export class Growcore implements MiniGame {
       return;
     }
 
-    // The point springs out into the core, white-hot at first and cooling to its own color,
-    // and the vortex motes spring out of its center to their orbits.
+    // The bang: the point bursts open into the core, white-hot at first and cooling to its own
+    // color, and the vortex motes fly out of its center to their orbits. Stiff springs, so it
+    // opens all at once and then wobbles.
     const tg = t - BOOT.beams;
-    const s = Math.max(3 / this.coreR, spring(tg));
+    const s = Math.max(3 / this.coreR, spring(tg, 30, 0.3));
+    // A thin ring of light flung out by the bang, fading as it goes.
+    const ring = clamp01(tg / 0.35);
+    if (ring < 1) {
+      ctx.globalAlpha = (1 - ring) ** 2 * 0.8;
+      ctx.strokeStyle = C.white;
+      ctx.lineWidth = 3 * (1 - ring) + 0.5;
+      ctx.beginPath();
+      ctx.arc(CX, CY, this.coreR + easeOutCubic(ring) * 70, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
     this.drawVortex(tg);
     ctx.save();
     ctx.translate(CX, CY);
@@ -1727,7 +1725,7 @@ export class Growcore implements MiniGame {
     ctx.translate(-CX, -CY);
     this.drawCore(false);
     ctx.restore();
-    ctx.globalAlpha = clamp01(1 - tg / 0.35) ** 2;
+    ctx.globalAlpha = clamp01(1 - tg / 0.3) ** 2;
     ctx.fillStyle = C.white;
     ctx.beginPath();
     ctx.arc(CX, CY, this.coreR * s, 0, Math.PI * 2);
