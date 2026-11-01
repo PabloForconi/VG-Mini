@@ -156,7 +156,7 @@ y `src/games/growcore-sfx.ts` (efectos).
 | Efecto | Sonido |
 | --- | --- |
 | Título | Cada letra que cae suena como una campana; juntas hacen una escala que sube. |
-| Encendido del núcleo | Dos sonidos. "Chuiiin": un silbido que sube mientras la pantalla blanca se cierra en un punto. "Chuuun": el big bang, un golpe grave que cae con una cola larga de reverb cuando se abre el núcleo. |
+| Encendido del núcleo | Dos sonidos. Mientras la pantalla blanca se cierra en un punto, un soplo de aire que crece como un platillo al revés y se corta justo en el big bang. El big bang: un golpe grave y cálido (casi sin caída de tono, para que no suene a "boing") y un acorde abierto La–Mi que florece en la reverb. |
 | Atraer | Un coro lejano (acorde abierto La–Mi) que se abre, brilla y sube un poco mientras mantenés. |
 | Captura | Campana (Celestina), dos campanas (Citrino), tres campanas y un destello (Rodonita). La nota sube con la carga. |
 | Cobro | Cascada de campanas, más larga cuanto más alto el tramo, sobre un golpe grave suave, y una ráfaga de aire que sale con la onda (más larga y llena cuanto más grande el núcleo). |

@@ -96,15 +96,18 @@ export function phaseSfx() {
 
 /**
  * Tap to play: the core powers on like an old TV (timed to BOOT in growcore.ts), two sounds.
- * "Chuiiin": a whine that climbs as the white screen collapses into a point. "Chuuun": the bang
- * as the core bursts open, a deep drop with a long tail in the hall.
+ * While the white screen collapses into a point, a breath of air swells up like a reversed
+ * cymbal and cuts off right at the bang. The bang itself: a warm, low thump (barely any pitch
+ * drop, so it doesn't "boing") and an open A–E chord blooming in the hall.
  * `bang`: seconds until the core bursts open.
  */
 export function startSfx(bang: number) {
-  tone({ freq: 300, to: 2400, dur: bang, type: 'sine', gain: 0.05, attack: bang * 0.8, vibrato: 12, wet: 0.4 });
-  whoosh(400, 6000, bang, 0.06);
-  tone({ freq: 140, to: 50, dur: 1.4, type: 'sine', gain: 0.24, attack: 0.01, delay: bang, wet: 0.6 });
-  noise(1.2, 0.08, 2500, { delay: bang, wet: 0.8 });
+  noise(bang, 0.07, 2500, { type: 'highpass', attack: bang * 0.95, wet: 0.5 });
+  tone({ freq: 82, to: 55, dur: 1.2, type: 'sine', gain: 0.22, attack: 0.008, delay: bang, wet: 0.4 });
+  noise(0.25, 0.08, 400, { delay: bang, wet: 0.5 });
+  for (const [freq, gain] of PULL_VOICES.slice(0, 4)) {
+    tone({ freq, dur: 2.2, type: 'sine', gain: gain * 0.1, attack: 0.04, delay: bang, wet: 0.85 });
+  }
 }
 
 /** Hit by a bomb: a low boom with a long tail in the hall. */
