@@ -605,9 +605,10 @@ const INTRO = {
  */
 const BOOT = {
   beams: 0.4, // the cross closes, accelerating
-  beamLen: 260, // length of each arm (a long triangle) at the start
-  beamWidth: 16, // half-width of each arm's base at the start …
+  beamReach: 80, // the arms (long triangles) start this far past the screen's edges
+  beamWidth: 22, // half-width of each arm's base at the start …
   beamEndWidth: 1, // … thinning down to this as it closes; it ends as long as the core's radius
+  flash: 0.3, // a white flash over the whole screen as it all starts, fading out
   grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
   motesStagger: 0.12, // the last mote leaves the center this long after the first
 };
@@ -1010,8 +1011,9 @@ export class Growcore implements MiniGame {
     this.holdBlocked = true;
     this.holding = false;
     music.level = LEVEL_BY_PHASE[0];
-    // The music's intro starts with the core's big bang (the player starts ~0.05 s late).
-    music.play(DRIVE, { delay: BOOT.beams - 0.05, fade: 0.05 });
+    // The music comes in with the core's big bang (the player starts ~0.05 s late), easing in
+    // so the beat doesn't slam in cold.
+    music.play(DRIVE, { delay: BOOT.beams - 0.05, fade: 1.2 });
     // The bed stays, ducked and stripped to a drone, under the in-game loop.
     ambient.level = 1;
     ambient.setVolume(0.35, 1.2);
@@ -1353,6 +1355,15 @@ export class Growcore implements MiniGame {
     ctx.restore();
 
     this.drawHud();
+
+    // The run starts with a white flash over everything (see BOOT).
+    const sinceStart = this.clock - this.startAt;
+    if (this.state === 'playing' && sinceStart < BOOT.flash) {
+      ctx.globalAlpha = 0.9 * (1 - sinceStart / BOOT.flash) ** 2;
+      ctx.fillStyle = C.white;
+      ctx.fillRect(VIEW.x0, VIEW.y0, VIEW.w, VIEW.h);
+      ctx.globalAlpha = 1;
+    }
   }
 
   /** Night sky: deep indigo gradient, two faint nebulae and twinkling stars. */
@@ -1670,11 +1681,12 @@ export class Growcore implements MiniGame {
 
     if (t < BOOT.beams) {
       // A star of four long, wide triangles (their bases overlap so the center is covered)
-      // closes in, slow at first and faster and faster: the arms squash shorter and thinner
-      // until it is a small, sharp star about the size of the newborn core.
+      // closes in from past the screen's edges, faster and faster: the arms squash shorter and
+      // thinner until it is a small, sharp star about the size of the newborn core.
       const u = t / BOOT.beams;
-      const open = 1 - u ** 3; // 1 = full star … 0 = closed
-      const len = this.coreR + (BOOT.beamLen - this.coreR) * open;
+      const open = 1 - u * u; // 1 = full star … 0 = closed
+      const start = Math.max(VIEW.w, VIEW.h) / 2 + BOOT.beamReach;
+      const len = this.coreR + (start - this.coreR) * open;
       const w = BOOT.beamEndWidth + (BOOT.beamWidth - BOOT.beamEndWidth) * open;
       const a = Math.min(1, t / 0.05) * (0.85 + Math.random() * 0.15);
       const gr = 30 - 6 * u;
