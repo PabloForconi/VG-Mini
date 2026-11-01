@@ -122,21 +122,30 @@ edilicias.**
 Los colores están en `C`, `KINDS` y `TIERS` de
 [`src/games/growcore.ts`](../src/games/growcore.ts); el cielo en `STARS` y `NEBULAE`.
 
-## Música
+## Música y sonido
 
-Toda la música es sintetizada en vivo (WebAudio, sin archivos), en La menor sobre
-La m – Fa – Do – Sol, así comparte notas con los "tink" de captura (pentatónica de Do)
-y nunca desafina contra ellos. Código: `src/engine/music.ts` (secuenciador) y
-`src/games/growcore-music.ts` (los temas).
+Todo el audio es sintetizado en vivo (WebAudio, sin archivos), en La menor sobre
+La m – Fa – Do – Sol, así comparte notas con las campanas de captura (pentatónica de Do)
+y nunca desafina contra ellas. Estilo buscado: etéreo y espacial (tipo Monument Valley):
+campanas de vidrio, colchones que crecen despacio y aire, casi todo pasando por una
+reverb de sala compartida. Código: `src/engine/audio.ts` (síntesis, reverb, `bell`,
+`Shimmer`), `src/engine/music.ts` (secuenciador), `src/games/growcore-music.ts` (temas)
+y `src/games/growcore-sfx.ts` (efectos).
 
 | Momento | Música |
 | --- | --- |
-| Inicio y resultados | **Calma**: 72 BPM, colchón suave por compás, bajo senoidal y un arpegio tipo caja de música con eco. 8 compases (~27 s). |
-| Partida | **Empuje**: 124 BPM, bombo en negras y bajo en octavas. Suma capas con la fase: hi-hats desde el Escudo (fase 3), melodía en semicorcheas desde el Super Escudo (fase 5), palmas y hi-hats rodando en ¡CAOS! (fase 6+). |
-| Al perder | La música se corta en seco y suena un **stinger** (tríada menor que cae + golpe grave). Si perdiste con **0 puntos**, en vez del stinger suena un "wah wah wah waaah" triste. A los ~2 s vuelve la Calma en la pantalla de resultados. |
+| Entrada | Pantalla **TOCÁ PARA ENTRAR**: el navegador no deja sonar nada hasta el primer toque, así que ese toque despierta el audio y recién ahí entra el título, con sonido. Si el juego está muteado, se saltea. |
+| Inicio y resultados | **Ambiente**: 60 BPM, sin percusión. Acordes que crecen despacio (2 compases cada uno), una melodía lenta de campanas y un destello cada 4 compases, todo con mucha reverb. Nunca se corta. |
+| Partida | El **Ambiente** sigue de fondo al 35 %, reducido a un dron La–Mi que no choca con ningún acorde. Encima, **Empuje**: 126 BPM, con bombo, bajo, hi-hats, colchón y arpegio de campanas desde el primer segundo. Cada nivel suma capas y 2 BPM: palmas y bajo más movido con Citrino (fase 2), melodía en semicorcheas con el Escudo (fase 3), hi-hats rodando y un sub grave con el Super Escudo (fase 5), hi-hats abiertos y contramelodía de campanas con los Cristales falsos (fase 7+). |
+| Al perder | El Empuje se corta en seco y el Ambiente se calla; suenan campanas que caen sobre un golpe grave (**stinger**). Con **0 puntos**, en vez del stinger, un "wah wah wah waaah" triste. A los ~2 s el Ambiente vuelve a subir con sus acordes. |
 
-El navegador no deja sonar nada hasta el primer toque, así que en la primera carga
-el inicio está en silencio (ese mismo toque arranca la partida).
+| Efecto | Sonido |
+| --- | --- |
+| Título | Cada letra que cae suena como una campana; juntas hacen una escala que sube. |
+| Atraer | Un coro lejano (acorde abierto La–Mi) que se abre, brilla y sube un poco mientras mantenés. |
+| Captura | Campana (Celestina), dos campanas (Citrino), tres campanas y un destello (Rodonita). La nota sube con la carga. |
+| Cobro | Cascada de campanas, más larga cuanto más alto el tramo, sobre un golpe grave suave. |
+| Escudo / bloqueo | Arpegio de campanas que sube con un soplo de aire / "ting" de vidrio. |
 
 ## Por qué engancha
 

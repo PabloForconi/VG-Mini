@@ -1,8 +1,9 @@
-import { Drone, isMuted, noise, setMuted, tone, vibrate } from '../engine/audio';
+import { isMuted, setMuted, Shimmer, vibrate } from '../engine/audio';
 import { isHolding, pointer, takePress } from '../engine/input';
-import { music } from '../engine/music';
+import { ambient, music } from '../engine/music';
 import { loadJSON, loadNumber, saveJSON, saveNumber } from '../engine/storage';
-import { CALM, DRIVE, LEVEL_BY_PHASE, loseStinger, zeroPointsFx } from './growcore-music';
+import { AMBIENT, DRIVE, LEVEL_BY_PHASE, loseStinger, zeroPointsFx } from './growcore-music';
+import * as sfx from './growcore-sfx';
 import { HEIGHT, VIEW, WIDTH, toGame, type MiniGame } from './MiniGame';
 
 /**
@@ -509,12 +510,7 @@ const NEBULAE: [number, number, number, string][] = [
   [310, 520, 260, 'rgba(200,110,200,0.10)'],
 ];
 
-/** Pentatonic steps so rising notes always sound musical. */
-const SCALE = [0, 2, 4, 7, 9];
-const note = (step: number) =>
-  523.25 * 2 ** ((SCALE[step % SCALE.length] + 12 * Math.floor(step / SCALE.length)) / 12);
-
-/** Mute toggle hit box, top-left corner (only active outside of play). */
+/** Mute toggle hit box, top-left corner (only active outside of play); y is from hudTop. */
 const MUTE_BTN = { x: 8, y: 6, w: 40, h: 34 };
 
 interface Body {
@@ -604,7 +600,8 @@ interface Popup {
   life: number;
 }
 
-type State = 'ready' | 'playing' | 'over';
+/** 'splash' waits for the first tap, which is what lets the browser play sound (see enter). */
+type State = 'splash' | 'ready' | 'playing' | 'over';
 
 /** A finished run on the local board: points, coins, when (ms epoch). */
 interface Run {
@@ -631,7 +628,8 @@ const BOARD_VERSION_KEY = 'growcore.boardVersion';
 const rand = (a: number, b: number) => a + Math.random() * (b - a);
 
 export class Growcore implements MiniGame {
-  private state: State = 'ready';
+  // Muted players get nothing from the splash, so they skip straight to the title.
+  private state: State = isMuted() ? 'ready' : 'splash';
   private bodies: Body[] = [];
   private particles: Particle[] = [];
   private uiParticles: Particle[] = []; // results-screen sparks/confetti, drawn above the veil
@@ -673,6 +671,9 @@ export class Growcore implements MiniGame {
   private holdBlocked = false; // a press that cashed out shouldn't also pull
   private overAt = 0;
   private introAt = Infinity; // clock time the start-screen animation began (set once fonts load)
+  private fontsReady = false;
+  private titleFx = 0; // title letters whose sound already played
+  private bedBack = true; // the ambient bed came back up after the last death
   private shake = 0;
   private corePop = 0;
   private holdTime = 0;
@@ -681,23 +682,21 @@ export class Growcore implements MiniGame {
   private vortexSpin = VORTEX.spinIdle; // current spin (rad/s at the core edge), with inertia
   // Each mote's own orbit angle, integrated every tick so inner motes really do lap outer ones.
   private moteAngles = Float32Array.from({ length: VORTEX.count }, (_, i) => i * 2.39996);
-  private hum = new Drone();
+  private hum = new Shimmer(sfx.PULL_VOICES);
 
   constructor(private ctx: CanvasRenderingContext2D) {
     // Canvas only uses a web font once it has loaded; ask for every weight up front, and hold
     // the intro until then (or 1 s at most) so it never plays in a fallback font and then jumps.
     const fonts = Promise.all([400, 600, 700].map((w) => document.fonts?.load(font(w, 16))));
-    const begin = () => {
-      if (this.introAt === Infinity) this.introAt = this.clock;
-    };
-    void fonts.then(begin, begin);
-    setTimeout(begin, 1000);
+    const ready = () => (this.fontsReady = true);
+    void fonts.then(ready, ready);
+    setTimeout(ready, 1000);
     if (loadNumber(BOARD_VERSION_KEY) < BOARD_VERSION) {
       saveJSON(RUNS_KEY, []);
       saveNumber(BOARD_VERSION_KEY, BOARD_VERSION);
     }
-    // Waits for the first tap to unlock audio, which on a fresh load is also the tap that starts.
-    music.play(CALM, { fade: 1.5 });
+    // Waits for the first tap to unlock audio (the splash tap, unless muted).
+    ambient.play(AMBIENT, { fade: 3 });
   }
 
   private get tierIndex() {
@@ -739,8 +738,7 @@ export class Growcore implements MiniGame {
     this.burst(mine.x, mine.y, color, 14, 160);
     this.popup(mine.x, mine.y - 14, '¡BLOQUEADA!', C.ink);
     this.shake = 0.15;
-    noise(0.25, 0.3, 4000);
-    tone({ freq: 1800, to: 600, dur: 0.2, type: 'triangle', gain: 0.12 });
+    sfx.blockSfx();
     vibrate(40);
     if (!this.slices.some(Boolean)) this.shieldKind = null;
     return true;
@@ -767,10 +765,20 @@ export class Growcore implements MiniGame {
     return toGame(pointer.x, pointer.y);
   }
 
+  /**
+   * Where the top HUD row starts. On screens taller than the play area (a phone in full-screen
+   * mode) it climbs into the extra space, up to just under the status bar, so the score and
+   * buttons sit as close to the top as they do in a browser tab.
+   */
+  private get hudTop() {
+    return Math.min(0, VIEW.y0 + VIEW.safeTop / VIEW.scale);
+  }
+
   private hitMute() {
     const { x, y } = this.pointerInGame();
     const b = MUTE_BTN;
-    return x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h;
+    const top = this.hudTop + b.y;
+    return x >= b.x && x <= b.x + b.w && y >= top && y <= top + b.h;
   }
 
   private hitCore() {
@@ -789,7 +797,7 @@ export class Growcore implements MiniGame {
     // Passing your best mid-run gets called out once (not on the very first run: nothing to beat).
     if (this.state === 'playing' && this.recordAt < 0 && this.bestBefore > 0 && this.score > this.bestBefore) {
       this.recordAt = this.clock;
-      [0, 4, 7, 12].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.2, type: 'triangle', gain: 0.12, delay: i * 0.07 }));
+      sfx.recordSfx();
       vibrate(25);
     }
 
@@ -799,10 +807,10 @@ export class Growcore implements MiniGame {
     }
     this.holding = isHolding() && !this.holdBlocked;
 
-    // Field hum rises in pitch the longer you hold: you hear the greed.
+    // The pull's choir brightens and climbs the longer you hold: you hear the greed.
     this.holdTime = this.holding && this.state === 'playing' ? this.holdTime + dt : 0;
     const h = Math.min(this.holdTime, 2.5);
-    this.hum.set(this.holdTime > 0 ? 0.05 + h * 0.025 : 0, 65 + h * 45);
+    this.hum.set(this.holdTime > 0 ? 0.08 + h * 0.024 : 0, h / 2.5);
 
     // The vortex opens up and spins faster the longer you hold; on release it closes back
     // in snug against the core and slows to a lazy turn.
@@ -824,12 +832,23 @@ export class Growcore implements MiniGame {
       setMuted(!isMuted());
       return;
     }
+    if (this.state === 'splash') {
+      if (press) this.enter();
+      return;
+    }
     if (this.state === 'ready') {
+      if (this.introAt === Infinity && this.fontsReady) this.introAt = this.clock;
+      this.updateTitleFx();
       if (press) this.start();
       return;
     }
     if (this.state === 'over') {
       this.updateResultsFx();
+      // The bed swells back once the stinger (or the sad trombone, which runs longer) is done.
+      if (!this.bedBack && this.clock - this.overAt > (this.score === 0 ? 2.4 : 1.8)) {
+        this.bedBack = true;
+        ambient.setVolume(1, 2.5);
+      }
       // Short lockout so a panicked tap doesn't skip the results; after it, retry is instant
       // even if the results animation is still playing.
       if (press && this.clock - this.overAt > 0.6) this.start();
@@ -901,8 +920,7 @@ export class Growcore implements MiniGame {
         if (b.danger && !inRing) {
           this.score += T.nearMissPoints;
           this.popup(b.x, b.y, `¡CERCA! +${T.nearMissPoints}`, C.gold);
-          tone({ freq: 900, to: 300, dur: 0.25, type: 'triangle', gain: 0.15 });
-          tone({ freq: 1320, dur: 0.15, gain: 0.1, delay: 0.08 });
+          sfx.nearMissSfx();
           vibrate(15);
         }
         b.danger = inRing;
@@ -915,10 +933,27 @@ export class Growcore implements MiniGame {
     this.bodies = this.bodies.filter((b) => !b.dead);
   }
 
+  /** The splash tap: audio is unlocked by now, so the title can play with sound. */
+  private enter() {
+    this.state = 'ready';
+    sfx.enterSfx();
+  }
+
+  /** Each title letter rings as it lands (see INTRO). */
+  private updateTitleFx() {
+    const t = this.clock - this.introAt;
+    while (this.titleFx < TITLE.length && t >= INTRO.letters + this.titleFx * INTRO.letterStep + INTRO.letterDur * 0.4) {
+      sfx.titleLetterSfx(this.titleFx++);
+    }
+  }
+
   private start() {
     this.state = 'playing';
     music.level = LEVEL_BY_PHASE[0];
     music.play(DRIVE, { fade: 0.15 });
+    // The bed stays, ducked and stripped to a drone, under the in-game loop.
+    ambient.level = 1;
+    ambient.setVolume(0.35, 1.2);
     this.bodies = [];
     this.time = 0;
     this.spawnTimer = 0.3;
@@ -939,7 +974,7 @@ export class Growcore implements MiniGame {
     this.slices = [];
     this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
     this.recordAt = -1;
-    tone({ freq: 220, to: 660, dur: 0.18, type: 'triangle', gain: 0.15 });
+    sfx.startSfx();
   }
 
   private enterPhase(i: number) {
@@ -955,7 +990,7 @@ export class Growcore implements MiniGame {
     this.bannerAt = this.clock;
     // Fanfare only with a banner: quiet phases just tick the counter up.
     if (p.title) {
-      [0, 2, 4, 7].forEach((s, j) => tone({ freq: note(s + 3), dur: 0.18, type: 'square', gain: 0.07, delay: j * 0.08 }));
+      sfx.phaseSfx();
       vibrate(25);
     }
   }
@@ -1043,7 +1078,7 @@ export class Growcore implements MiniGame {
       this.corePop = 1;
       this.burst(CX, CY, k.color, 30, 180);
       this.popup(CX, CY - this.shieldR - 14, `¡${k.name.toUpperCase()}!`, k.light, 18);
-      [0, 4, 7, 12].forEach((s, i) => tone({ freq: note(s), dur: 0.25, type: 'sine', gain: 0.14, delay: i * 0.06 }));
+      sfx.shieldSfx();
       vibrate(20);
       return;
     }
@@ -1058,24 +1093,13 @@ export class Growcore implements MiniGame {
     // Notes climb with the load: the higher the pitch, the more you risk. The climb flattens out
     // around 2 kHz; a straight step per load point went past 8 kHz, inaudible on phone speakers.
     const step = Math.round(10 * (1 - Math.exp(-this.load / 14)));
-    if (b.kind === 'pink') {
-      tone({ freq: note(step), dur: 0.35, type: 'triangle', gain: 0.18 });
-      tone({ freq: note(step + 2), dur: 0.35, type: 'triangle', gain: 0.12, delay: 0.06 });
-      tone({ freq: note(step + 4), dur: 0.35, type: 'triangle', gain: 0.1, delay: 0.12 });
-      vibrate(15);
-    } else if (b.kind === 'yellow') {
-      tone({ freq: note(step), dur: 0.22, type: 'triangle', gain: 0.17 });
-      tone({ freq: note(step + 2), dur: 0.22, type: 'triangle', gain: 0.1, delay: 0.05 });
-    } else {
-      tone({ freq: note(step), dur: 0.14, type: 'triangle', gain: 0.16 });
-    }
+    sfx.catchSfx(b.kind, step);
+    if (b.kind === 'pink') vibrate(15);
 
     if (this.tierIndex > tierBefore) {
       const tier = TIERS[this.tierIndex];
       this.popup(CX, CY - this.targetCoreR() - 16, `x${tier.mult}`, tier.ink, 22);
-      [0, 2, 4].forEach((s, i) =>
-        tone({ freq: note(step + s + 2), dur: 0.12, type: 'square', gain: 0.06, delay: 0.05 + i * 0.05 }),
-      );
+      sfx.tierUpSfx(step);
     }
   }
 
@@ -1090,11 +1114,8 @@ export class Growcore implements MiniGame {
     this.corePop = 1;
     this.shake = 0.04 * ti;
 
-    // Bigger cash-outs get a longer, higher arpeggio.
-    for (let i = 0; i <= ti + 1; i++) {
-      tone({ freq: note(i * 2 + ti * 2), dur: 0.2, type: 'triangle', gain: 0.14, delay: i * 0.05 });
-    }
-    tone({ freq: 110, to: 55, dur: 0.25, type: 'sine', gain: 0.3 });
+    // Bigger cash-outs get a longer, higher cascade.
+    sfx.cashOutSfx(ti);
     vibrate(20 + ti * 15);
 
     this.bank = 0;
@@ -1120,15 +1141,16 @@ export class Growcore implements MiniGame {
     this.recordRun();
     this.resultsFx = { lastTick: 0, score: false, coins: false, msg: false };
     this.uiParticles = [];
-    noise(0.6, 0.5, 2000);
-    tone({ freq: 160, to: 40, dur: 0.5, type: 'sine', gain: 0.4 });
+    sfx.deathSfx();
     vibrate([60, 40, 120]);
     // The music cuts dead; a run with no points at all gets the sad trombone instead of the stinger.
-    // The calm loop comes back once the results have settled.
+    // The bed drops out too, and swells back with its chords once the results have settled.
     music.stop(0.04);
     if (this.score === 0) zeroPointsFx();
     else loseStinger();
-    music.play(CALM, { delay: this.score === 0 ? 2.8 : 2.2, fade: 2 });
+    ambient.level = 0;
+    ambient.setVolume(0, 0.1);
+    this.bedBack = false;
   }
 
   /** Saves this run to the local board (kept best-first) and works out where it landed. */
@@ -1211,7 +1233,7 @@ export class Growcore implements MiniGame {
     }
 
     this.drawScenery(active);
-    if (this.state !== 'ready') this.drawField(active);
+    if (this.state === 'playing' || this.state === 'over') this.drawField(active);
 
     const field = this.fieldRadius;
     ctx.lineWidth = 1;
@@ -1541,7 +1563,7 @@ export class Growcore implements MiniGame {
   private drawMuteIcon() {
     const { ctx } = this;
     const x = MUTE_BTN.x + 12;
-    const y = MUTE_BTN.y + MUTE_BTN.h / 2;
+    const y = this.hudTop + MUTE_BTN.y + MUTE_BTN.h / 2;
     ctx.save();
     ctx.fillStyle = ctx.strokeStyle = isMuted() ? 'rgba(255,255,255,0.3)' : C.inkSoft;
     ctx.lineWidth = 2;
@@ -1766,7 +1788,7 @@ export class Growcore implements MiniGame {
     ctx.fillStyle = C.inkSoft;
     ctx.font = font(600, 12);
     this.spaced(3);
-    ctx.fillText(`FASE ${this.phase + 1}`, CX, 96);
+    ctx.fillText(`FASE ${this.phase + 1}`, CX, this.hudTop + 86);
     this.spaced(0);
 
     const p = PHASES[this.phase];
@@ -1777,7 +1799,7 @@ export class Growcore implements MiniGame {
     const rise = Math.max(0, 0.2 - t) * 50;
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.translate(CX, 136 + rise);
+    ctx.translate(CX, this.hudTop + 126 + rise);
     this.drawBannerTag(p);
     ctx.restore();
   }
@@ -1877,30 +1899,37 @@ export class Growcore implements MiniGame {
 
   private drawHud() {
     const { ctx } = this;
+    const top = this.hudTop;
+    ctx.textAlign = 'center';
+    if (this.state === 'splash') this.drawSplash();
+    if (this.state === 'ready') this.drawTitle();
     if (this.state === 'playing') {
       ctx.textAlign = 'right';
       ctx.font = font(700, 15);
       ctx.fillStyle = C.gold;
-      ctx.fillText(`● ${this.runCoins}`, WIDTH - 14, 28);
-    }
-    ctx.textAlign = 'center';
-
-    if (this.state !== 'playing') this.drawMuteIcon();
-
-    if (this.state === 'ready') {
-      this.drawTitle();
-      return;
-    }
-
-    if (this.state === 'playing') {
+      ctx.fillText(`● ${this.runCoins}`, WIDTH - 14, top + 26);
+      ctx.textAlign = 'center';
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 44);
-      ctx.fillText(String(Math.round(this.shownScore)), CX, 72);
+      ctx.fillText(String(Math.round(this.shownScore)), CX, top + 62);
       if (this.recordAt >= 0) this.drawRecordTag();
       this.drawPhase();
     }
-
     if (this.state === 'over') this.drawResults();
+    // Last, so the results veil never dims it.
+    if (this.state !== 'playing') this.drawMuteIcon();
+  }
+
+  /** First screen: just the sky and a pulsing prompt. Its tap is what turns the sound on. */
+  private drawSplash() {
+    const { ctx } = this;
+    ctx.globalAlpha = Math.min(1, this.clock * 2) * (0.6 + Math.sin(this.clock * 3) * 0.4);
+    ctx.fillStyle = C.ink;
+    ctx.font = font(700, 18);
+    this.spaced(3);
+    ctx.fillText('TOCÁ PARA ENTRAR', CX, CY + 6);
+    this.spaced(0);
+    ctx.globalAlpha = 1;
   }
 
   /** "RÉCORD ALCANZADO" above the score: pops in when the run passes the best, then stays. */
@@ -1910,7 +1939,7 @@ export class Growcore implements MiniGame {
     const s = 1 + pop(t) * 2;
     ctx.save();
     ctx.globalAlpha = Math.min(1, t * 5);
-    ctx.translate(CX, 24);
+    ctx.translate(CX, this.hudTop + 19);
     ctx.scale(s, s);
     ctx.textAlign = 'center';
     ctx.fillStyle = C.gold;
@@ -2087,27 +2116,26 @@ export class Growcore implements MiniGame {
     if (t >= RES.countStart && t < RES.countEnd && this.clock - fx.lastTick > 0.055) {
       fx.lastTick = this.clock;
       const k = (t - RES.countStart) / (RES.countEnd - RES.countStart);
-      tone({ freq: 520 + k * 760, dur: 0.04, type: 'square', gain: 0.03 });
+      sfx.countTickSfx(k);
     }
     if (!fx.score && t >= RES.countEnd) {
       fx.score = true;
-      [0, 4, 7].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.22, type: 'triangle', gain: 0.1, delay: i * 0.03 }));
+      sfx.scoreLandSfx();
     }
     if (!fx.coins && t >= RES.coinsEnd && this.runCoins > 0) {
       fx.coins = true;
       this.uiBurst(CX + 30, 207, [C.gold, '#fff2c4'], 10, 140);
-      tone({ freq: 1318, dur: 0.12, type: 'sine', gain: 0.1 });
-      tone({ freq: 1760, dur: 0.18, type: 'sine', gain: 0.08, delay: 0.06 });
+      sfx.coinsSfx();
     }
     if (!fx.msg && t >= RES.msg) {
       fx.msg = true;
       const res = this.result;
       if (res && res.pos === 1 && res.total > 1) {
         // New record: the stamp plus a fanfare (no confetti, kept clean on purpose).
-        [0, 2, 4, 7, 9].forEach((s, i) => tone({ freq: note(s + 5), dur: 0.3, type: 'triangle', gain: 0.13, delay: i * 0.08 }));
+        sfx.newBestSfx();
         vibrate([30, 40, 30]);
       } else {
-        tone({ freq: 880, to: 660, dur: 0.18, type: 'triangle', gain: 0.07 });
+        sfx.notBestSfx();
       }
     }
   }

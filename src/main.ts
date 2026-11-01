@@ -17,6 +17,11 @@ const games: Record<string, GameEntry> = {
 };
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
+
+// env() is only readable from CSS: a hidden probe reports the top safe-area inset.
+const safeProbe = document.createElement('div');
+safeProbe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-area-inset-top,0px);visibility:hidden';
+document.body.appendChild(safeProbe);
 const ctx = canvas.getContext('2d')!;
 
 /**
@@ -35,7 +40,8 @@ function fit() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   ctx.setTransform(scale * dpr, 0, 0, scale * dpr, ox * dpr, oy * dpr);
-  Object.assign(VIEW, { x0: -ox / scale, y0: -oy / scale, w: w / scale, h: h / scale, px: scale * dpr, scale, ox, oy });
+  const safeTop = safeProbe.offsetHeight;
+  Object.assign(VIEW, { x0: -ox / scale, y0: -oy / scale, w: w / scale, h: h / scale, px: scale * dpr, scale, ox, oy, safeTop });
 }
 fit();
 window.addEventListener('resize', fit);

@@ -1,9 +1,10 @@
-import { getAudio } from './audio';
+import { getAudio, reverbInput } from './audio';
 
 /** What a track gets for each 16th-note step it plays. */
 export interface StepContext {
   delay: number; // seconds from now until this step sounds
   out: AudioNode; // the track's own fader; pass it as `dest`
+  space: AudioNode; // the track's own reverb send; pass it as `wetDest`
   level: number; // intensity set by the game (tracks add layers as it rises)
   stepDur: number; // seconds per 16th note
 }
@@ -11,6 +12,7 @@ export interface StepContext {
 /** A synthesized loop: no samples, every note is scheduled as it comes around. */
 export interface Track {
   bpm: number;
+  bpmPerLevel?: number; // tempo added per intensity level, so the loop speeds up as it builds
   steps: number; // loop length in 16th notes
   gain: number; // fader level relative to the sound effects
   step(i: number, ctx: StepContext): void;
@@ -22,13 +24,15 @@ const LOOKAHEAD = 0.15; // seconds of notes scheduled ahead of the clock
 /**
  * Plays one track at a time. A timer schedules notes slightly ahead of the audio clock (the
  * usual WebAudio pattern), so timing stays tight even if a frame hitches. Each track plays
- * through its own gain node, which is how switching tracks fades or cuts cleanly.
+ * through its own pair of gain nodes (dry, and a send to the reverb), which is how switching
+ * tracks fades or cuts cleanly. Several players can run at once (a bed under the main music).
  */
-class Music {
+export class Music {
   level = 0;
   private track: Track | null = null;
-  private fader: GainNode | null = null;
+  private faders: GainNode[] | null = null; // [dry, reverb send]
   private pending: { delay: number; fade: number } | null = null; // start waiting for audio
+  private volume = 1; // multiplies the track's own gain (ducking)
   private stepIndex = 0;
   private nextAt = 0;
 
@@ -52,16 +56,31 @@ class Music {
     this.pending = null;
   }
 
+  /** Glide the volume to `v` (1 = the track's own level) over `fade` seconds, starting now. */
+  setVolume(v: number, fade = 0.5) {
+    this.volume = v;
+    const a = getAudio();
+    if (!a || !this.faders || !this.track) return;
+    const now = a.ac.currentTime;
+    for (const g of this.faders) {
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.linearRampToValueAtTime(this.track.gain * v, now + fade);
+    }
+  }
+
   private release(fade: number) {
     const a = getAudio();
-    const g = this.fader;
-    this.fader = null;
-    if (!a || !g) return;
+    const faders = this.faders;
+    this.faders = null;
+    if (!a || !faders) return;
     const now = a.ac.currentTime;
-    g.gain.cancelScheduledValues(now);
-    g.gain.setValueAtTime(g.gain.value, now);
-    g.gain.linearRampToValueAtTime(0, now + fade);
-    setTimeout(() => g.disconnect(), (fade + LOOKAHEAD + 0.5) * 1000);
+    for (const g of faders) {
+      g.gain.cancelScheduledValues(now);
+      g.gain.setValueAtTime(g.gain.value, now);
+      g.gain.linearRampToValueAtTime(0, now + fade);
+      setTimeout(() => g.disconnect(), (fade + LOOKAHEAD + 0.5) * 1000);
+    }
   }
 
   private tick() {
@@ -74,22 +93,27 @@ class Music {
     if (this.pending) {
       const { delay, fade } = this.pending;
       this.pending = null;
-      const g = a.ac.createGain();
-      g.gain.setValueAtTime(0, now + delay);
-      g.gain.linearRampToValueAtTime(track.gain, now + delay + fade);
-      g.connect(a.master);
-      this.fader = g;
+      const targets = [a.master, reverbInput() ?? a.master];
+      this.faders = targets.map((to) => {
+        const g = a.ac.createGain();
+        g.gain.setValueAtTime(0, now + delay);
+        g.gain.linearRampToValueAtTime(track.gain * this.volume, now + delay + fade);
+        g.connect(to);
+        return g;
+      });
       this.nextAt = now + delay + 0.05;
     }
-    if (!this.fader) return;
+    if (!this.faders) return;
 
     // Timers stall in background tabs; skip the missed notes instead of firing them all at once.
     if (this.nextAt < now - 0.05) this.nextAt = now + 0.02;
-    const stepDur = 60 / track.bpm / 4;
+    const bpm = track.bpm + (track.bpmPerLevel ?? 0) * this.level;
+    const stepDur = 60 / bpm / 4;
     while (this.nextAt < now + LOOKAHEAD) {
       track.step(this.stepIndex % track.steps, {
         delay: Math.max(0, this.nextAt - now),
-        out: this.fader,
+        out: this.faders[0],
+        space: this.faders[1],
         level: this.level,
         stepDur,
       });
@@ -99,7 +123,10 @@ class Music {
   }
 }
 
+/** The main music: title/results ambience is on `ambient`, the in-game loop here. */
 export const music = new Music();
+/** A bed that never stops: full on the menus, ducked under the in-game loop. */
+export const ambient = new Music();
 
 /** MIDI note number → Hz (69 = A4 = 440 Hz). */
 export const hz = (midi: number) => 440 * 2 ** ((midi - 69) / 12);

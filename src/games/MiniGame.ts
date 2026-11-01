@@ -17,6 +17,7 @@ export const VIEW = {
   scale: 1, // CSS px per logical px
   ox: 0, // CSS px from the window's left edge to logical x = 0
   oy: 0, // … top edge to logical y = 0
+  safeTop: 0, // CSS px the status bar / notch covers at the top (full-screen web app), else 0
 };
 
 /** Window (CSS px) coordinates → logical play-area coordinates. */
