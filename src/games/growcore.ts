@@ -48,6 +48,12 @@ const T = {
   pointsPerCoin: 5,
   tiltMax: 0.35, // max gem lean while pulled (~20°)
   tiltSpeed: 450, // sideways pull speed (px/s) that reaches tiltMax
+  // Cash-out shockwave: a ring leaves the core edge and shoves everything it passes outward.
+  waveReach: 110, // how far past the core edge it pushes, smallest core
+  waveReachGrowth: 190, // extra reach at max core size
+  waveImpulse: 520, // px/s given to a mass-1 item touching the core edge, smallest core
+  waveImpulseGrowth: 1.6, // extra impulse (fraction) at max core size
+  waveSpeed: 700, // px/s the ring travels
 };
 
 type ShieldKind = 'shield' | 'pizza';
@@ -525,7 +531,18 @@ interface Body {
   spin: number;
   danger: boolean; // mine currently inside the near-miss ring
   tilt: number; // gems lean toward where the magnet drags them (radians)
+  wave: number; // id of the last shockwave that pushed it, so each wave hits it once
   dead: boolean;
+}
+
+/** A cash-out shockwave: starts at the core edge (r0) and pushes out to r0 + reach. */
+interface Wave {
+  id: number;
+  at: number; // clock time it left the core
+  r0: number;
+  reach: number;
+  impulse: number;
+  color: string;
 }
 
 interface Particle {
@@ -654,6 +671,7 @@ export class Growcore implements MiniGame {
   private shieldTimer = 0; // countdown to the next random shield drop
   private shieldKind: ShieldKind | null = null;
   private slices: boolean[] = []; // which shield slices are still up
+  private wave: Wave = { id: 0, at: -99, r0: 0, reach: 0, impulse: 0, color: '' };
   private score = 0;
   private shownScore = 0; // counts up toward score
   private bank = 0; // points stored in the core, not yet cashed
@@ -877,11 +895,23 @@ export class Growcore implements MiniGame {
     const decay = Math.exp(-T.pullDecay * dt);
     const field = this.fieldRadius;
     const force = T.pullForce * (1 + T.pullGrowth * this.growth);
+    const wave = this.wave;
+    const front = wave.r0 + (this.clock - wave.at) * T.waveSpeed;
+    const waving = front < wave.r0 + wave.reach;
     for (const b of this.bodies) {
       const k = KINDS[b.kind];
       let ox = CX - b.x;
       let oy = CY - b.y;
       let d = Math.hypot(ox, oy);
+
+      // The ring's front reaches the item's edge: a one-off outward kick, the same impulse for
+      // everyone, so light gems fly and heavy bombs just budge. It fades out across the reach.
+      if (waving && b.wave !== wave.id && d - k.r <= front) {
+        b.wave = wave.id;
+        const kick = (wave.impulse * Math.max(0, 1 - (d - k.r - wave.r0) / wave.reach)) / k.mass;
+        b.vx -= (ox / d) * kick;
+        b.vy -= (oy / d) * kick;
+      }
 
       if (this.holding && d < field) {
         // Stronger near the core, so a committed pull finishes the job.
@@ -1068,6 +1098,7 @@ export class Growcore implements MiniGame {
       spin: Math.random() * Math.PI * 2,
       danger: false,
       tilt: 0,
+      wave: 0,
       dead: false,
     });
   }
@@ -1116,9 +1147,20 @@ export class Growcore implements MiniGame {
     this.popup(CX, CY - this.coreR - 24, `+${pts}`, tier.ink, 20 + ti * 4);
     this.corePop = 1;
     this.shake = 0.04 * ti;
+    // The blast scales with the core: a big core pushes harder and farther, so it can clear a
+    // bomb that was about to hit.
+    const g = this.growth;
+    this.wave = {
+      id: this.wave.id + 1,
+      at: this.clock,
+      r0: this.coreR,
+      reach: T.waveReach + T.waveReachGrowth * g,
+      impulse: T.waveImpulse * (1 + T.waveImpulseGrowth * g),
+      color: tier.left,
+    };
 
     // Bigger cash-outs get a longer, higher cascade.
-    sfx.cashOutSfx(ti);
+    sfx.cashOutSfx(ti, g);
     vibrate(20 + ti * 15);
 
     this.bank = 0;
@@ -1237,6 +1279,7 @@ export class Growcore implements MiniGame {
 
     this.drawScenery(active);
     if (this.state === 'playing' || this.state === 'over') this.drawField(active);
+    if (this.state === 'playing') this.drawWave();
 
     const field = this.fieldRadius;
     ctx.lineWidth = 1;
@@ -1387,6 +1430,29 @@ export class Growcore implements MiniGame {
       ctx.arc(CX, CY, (field - this.coreR) * (1 - t) + this.coreR, 0, Math.PI * 2);
       ctx.stroke();
     }
+  }
+
+  /** The cash-out shockwave: a bright ring that thins and fades as it runs out of reach. */
+  private drawWave() {
+    const { ctx } = this;
+    const w = this.wave;
+    const t = ((this.clock - w.at) * T.waveSpeed) / w.reach;
+    if (t >= 1) return;
+    const r = w.r0 + t * w.reach;
+    const fade = 1 - t * t;
+    ctx.strokeStyle = w.color;
+    // A wide faint band trailing the front stands in for a glow (no blur).
+    ctx.globalAlpha = fade * 0.3;
+    ctx.lineWidth = 16 * (1 - t) + 3;
+    ctx.beginPath();
+    ctx.arc(CX, CY, Math.max(w.r0, r - 7), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = fade;
+    ctx.lineWidth = 5 * (1 - t) + 1.5;
+    ctx.beginPath();
+    ctx.arc(CX, CY, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   }
 
   private drawBody(b: Body) {

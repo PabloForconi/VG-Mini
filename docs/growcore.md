@@ -105,6 +105,19 @@ muere.
 
 Un anillo alrededor del núcleo muestra cuánto falta para el próximo tramo.
 
+### Onda expansiva
+
+Cobrar suelta una onda que sale del borde del núcleo y **empuja hacia afuera todo lo
+que toca**: cristales, minas, falsos y escudos. Sirve para salvarte de una mina que
+estaba por entrar, a cambio de alejar también los cristales cercanos.
+
+- La onda viaja (`waveSpeed`, 700 px/s) y empuja a cada ítem una sola vez, cuando el frente le llega.
+- Es un impulso: todos reciben el mismo, así que la velocidad que ganan es impulso / masa. Una Celestina sale volando; una mina (3,4) apenas se corre.
+- El empujón se apaga a lo largo del alcance: máximo pegado al núcleo, nada en el borde de la onda.
+- Escala con el tamaño del núcleo al cobrar: con el más chico llega a 110 px del borde con impulso 520; con el máximo, a 300 px con impulso 1352 (`waveReach`, `waveReachGrowth`, `waveImpulse`, `waveImpulseGrowth`).
+- Lo empujado frena igual que lo atraído (`pullDecay`): recorre en total velocidad / 2,4. Ejemplo: una mina a 12 px del borde de un núcleo máximo sale a ~370 px/s y se aleja ~150 px.
+- Si la onda saca una mina del anillo de peligro, cuenta como "¡CERCA!".
+
 ## Estética
 
 Noche en el espacio con formas planas en pastel, en el espíritu de las escenas
@@ -115,7 +128,7 @@ edilicias.**
 - **Núcleo**: círculo pastel con brillo, que cambia de tono con el tramo (crema → menta → verde agua → dorado → coral). El número va en tinta oscura.
 - **Gemas**: cristales facetados en dos tonos, sin giro, con brillo suave de su color. Mientras el imán las arrastra **se inclinan hacia donde van** (más rápido = más inclinación: celeste hasta 20°, amarilla ~13°, rosa ~6°) y al soltar vuelven a quedar derechas (`tiltMax`, `tiltSpeed`).
 - **Minas**: silueta de mina naval **facetada en rojos** (cuerpo tallado en 8 caras, 8 pinchos piramidales y un centro redondo), con sombreado plano y la luz siempre arriba a la izquierda aunque gire. Late apenas y tiene un halo rojo tenue. Se pre-dibuja como imagen en 16 pasos de giro (ver *Rendimiento*).
-- **Cobro**: las partículas del cobro salen disparadas lejos (en un cobro grande llegan a los bordes); las de cada captura quedan cerca del núcleo.
+- **Cobro**: las partículas del cobro salen disparadas lejos (en un cobro grande llegan a los bordes); las de cada captura quedan cerca del núcleo. La onda expansiva se ve como un anillo del color del tramo que se abre, se afina y se apaga.
 - **Escudos**: burbujas blancas con brillo. El ícono pizza es de un solo color plano que cambia suave en ciclo (blanco → rosa → amarillo → verde → celeste → lila), sin divisiones: la misma burbuja transparente que el simple, pero teñida (relleno y borde) con el color que va cambiando.
 - **Texto**: Josefin Sans en tonos claros, títulos con espaciado amplio.
 
@@ -144,7 +157,7 @@ y `src/games/growcore-sfx.ts` (efectos).
 | Título | Cada letra que cae suena como una campana; juntas hacen una escala que sube. |
 | Atraer | Un coro lejano (acorde abierto La–Mi) que se abre, brilla y sube un poco mientras mantenés. |
 | Captura | Campana (Celestina), dos campanas (Citrino), tres campanas y un destello (Rodonita). La nota sube con la carga. |
-| Cobro | Cascada de campanas, más larga cuanto más alto el tramo, sobre un golpe grave suave. |
+| Cobro | Cascada de campanas, más larga cuanto más alto el tramo, sobre un golpe grave suave, y una ráfaga de aire que sale con la onda (más larga y llena cuanto más grande el núcleo). |
 | Escudo / bloqueo | Arpegio de campanas que sube con un soplo de aire / "ting" de vidrio. |
 
 ## Por qué engancha

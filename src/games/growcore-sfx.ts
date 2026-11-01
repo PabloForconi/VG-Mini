@@ -68,12 +68,14 @@ export function nearMissSfx() {
 }
 
 /** Cash-out: a cascade of bells, longer and higher for bigger tiers, over a soft low bloom. */
-export function cashOutSfx(tier: number) {
+export function cashOutSfx(tier: number, size: number) {
   for (let i = 0; i <= tier + 2; i++) {
     bell(note(i * 2 + tier * 2), { gain: 0.1, dur: 1.2, delay: i * 0.05 });
   }
   tone({ freq: 130, to: 65, dur: 0.6, type: 'sine', gain: 0.22, attack: 0.02, wet: 0.3 });
   noise(0.6, 0.03 + tier * 0.01, 5000, { type: 'highpass', attack: 0.15, wet: 0.8 });
+  // The shockwave: a rush of air sweeping out, longer and fuller the bigger the core was.
+  whoosh(250, 2500 + size * 2500, 0.25 + size * 0.25, 0.08 + size * 0.07);
 }
 
 /** Passed your best mid-run. */
