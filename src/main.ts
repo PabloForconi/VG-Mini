@@ -24,6 +24,18 @@ safeProbe.style.cssText = 'position:fixed;top:0;left:0;width:0;height:env(safe-a
 document.body.appendChild(safeProbe);
 const ctx = canvas.getContext('2d')!;
 
+/** Launched from the home screen (no browser bars): the whole physical screen is ours. */
+const fullScreenApp = () =>
+  matchMedia('(display-mode: standalone)').matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+
+/**
+ * The screen's height in the current orientation. Needed because iOS full-screen web apps that
+ * draw under the translucent status bar report innerHeight short by that bar, which left an
+ * empty strip at the bottom.
+ */
+const screenHeight = () =>
+  innerWidth < innerHeight ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+
 /**
  * The canvas fills the whole window (no letterbox bars on tall phones); the logical play area
  * is scaled to fit and centered inside it. VIEW tells games how much extra backdrop shows.
@@ -31,7 +43,7 @@ const ctx = canvas.getContext('2d')!;
 function fit() {
   const dpr = window.devicePixelRatio || 1;
   const w = innerWidth;
-  const h = innerHeight;
+  const h = fullScreenApp() ? Math.max(innerHeight, screenHeight()) : innerHeight;
   const scale = Math.min(w / WIDTH, h / HEIGHT);
   const ox = (w - WIDTH * scale) / 2;
   const oy = (h - HEIGHT * scale) / 2;
