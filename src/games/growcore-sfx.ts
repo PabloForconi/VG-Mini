@@ -94,10 +94,16 @@ export function phaseSfx() {
   tone({ freq: 110, to: 165, dur: 0.7, type: 'sine', gain: 0.09, attack: 0.25, wet: 0.5 });
 }
 
-/** Tap to play: a rising sweep, like lifting off. */
+/**
+ * Tap to play: the core powers on like an old TV (timed to BOOT in growcore.ts). A thin whine
+ * climbs as the two beams close in, a high bell rings when they meet in a point, and a low
+ * tone swells up as the point grows into the core.
+ */
 export function startSfx() {
-  tone({ freq: 220, to: 660, dur: 0.5, type: 'sine', gain: 0.1, attack: 0.05, wet: 0.6 });
-  whoosh(600, 3000, 0.5, 0.06);
+  whoosh(900, 5000, 0.3, 0.05);
+  tone({ freq: 1400, to: 2800, dur: 0.32, type: 'sine', gain: 0.02, attack: 0.28, wet: 0.4 });
+  bell(note(12), { gain: 0.09, dur: 1.4, delay: 0.3, wet: 0.7 });
+  tone({ freq: 98, to: 196, dur: 0.6, type: 'sine', gain: 0.12, attack: 0.08, delay: 0.38, wet: 0.5 });
 }
 
 /** Hit by a bomb: a low boom with a long tail in the hall. */

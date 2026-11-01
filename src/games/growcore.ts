@@ -597,6 +597,19 @@ const INTRO = {
   prompt: 1.5, // "TOCÁ PARA EMPEZAR" fades in, then pulses
 };
 
+/**
+ * The core powers on at the start of a run like an old TV, in seconds after the start tap:
+ * a horizontal and a vertical beam of light close in on the center, meet in a bright point,
+ * and the point swells into the core.
+ */
+const BOOT = {
+  beams: 0.3, // beams shrink toward the center
+  spark: 0.12, // they meet: a four-point spark
+  grow: 0.35, // the spark swells into the core, overshooting a little
+  beamLen: 240, // half-length of each beam when it appears
+};
+const BOOT_END = BOOT.beams + BOOT.spark + BOOT.grow;
+
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const easeOutCubic = (x: number) => 1 - (1 - x) ** 3;
 /** Overshoots a little before settling: things "land". */
@@ -688,6 +701,7 @@ export class Growcore implements MiniGame {
   private holding = false;
   private holdBlocked = false; // a press that cashed out (or started the run) shouldn't also pull
   private overAt = 0;
+  private startAt = -99; // clock time of the start tap; the core boots up from here (see BOOT)
   private introAt = Infinity; // clock time the start-screen animation began (set once fonts load)
   private fontsReady = false;
   private titleFx = 0; // title letters whose sound already played
@@ -979,6 +993,7 @@ export class Growcore implements MiniGame {
 
   private start() {
     this.state = 'playing';
+    this.startAt = this.clock;
     // The tap that starts the run is not a pull: the field waits until the finger lifts.
     this.holdBlocked = true;
     this.holding = false;
@@ -1302,8 +1317,11 @@ export class Growcore implements MiniGame {
     ctx.globalAlpha = 1;
 
     if (this.state === 'playing') {
-      this.drawVortex();
-      this.drawCore(active);
+      if (this.clock - this.startAt < BOOT_END) this.drawBoot();
+      else {
+        this.drawVortex();
+        this.drawCore(active);
+      }
     }
 
     ctx.textAlign = 'center';
@@ -1626,6 +1644,83 @@ export class Growcore implements MiniGame {
       ctx.fillText('¡TOCÁ EL NÚCLEO!', CX, CY + r + below + 24);
       ctx.globalAlpha = 1;
     }
+  }
+
+  /** The core powering on like an old TV (see BOOT). */
+  private drawBoot() {
+    const { ctx } = this;
+    const t = this.clock - this.startAt;
+    let glow = this.coreGlows.get(C.white);
+    if (!glow) this.coreGlows.set(C.white, (glow = buildCoreGlow(C.white)));
+
+    if (t < BOOT.beams) {
+      // Two thin beams shrink onto the center, brightening (and flickering a touch) as they go.
+      const u = t / BOOT.beams;
+      const len = BOOT.beamLen * (1 - u * u) + 4;
+      const a = Math.min(1, u * 3) * (0.85 + Math.random() * 0.15);
+      for (const [dx, dy] of [[1, 0], [0, 1]]) {
+        const g = ctx.createLinearGradient(CX - dx * len, CY - dy * len, CX + dx * len, CY + dy * len);
+        g.addColorStop(0, 'rgba(255,255,255,0)');
+        g.addColorStop(0.5, '#ffffff');
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.strokeStyle = g;
+        ctx.lineCap = 'round';
+        // A wide faint stroke under a thin bright one: the beam's glow (no blur).
+        for (const [w, alpha] of [[7, 0.18], [1.5 + u * 1.5, 1]]) {
+          ctx.globalAlpha = a * alpha;
+          ctx.lineWidth = w;
+          ctx.beginPath();
+          ctx.moveTo(CX - dx * len, CY - dy * len);
+          ctx.lineTo(CX + dx * len, CY + dy * len);
+          ctx.stroke();
+        }
+      }
+      ctx.lineCap = 'butt';
+      ctx.globalAlpha = 1;
+      return;
+    }
+
+    if (t < BOOT.beams + BOOT.spark) {
+      // They meet: a four-point spark that flares and pulls back in to a hot dot.
+      const u = (t - BOOT.beams) / BOOT.spark;
+      const gr = 18 + 22 * (1 - u);
+      ctx.drawImage(glow, CX - gr, CY - gr, gr * 2, gr * 2);
+      const l = 40 * (1 - u) + 7;
+      const w = 3;
+      ctx.fillStyle = C.white;
+      ctx.beginPath();
+      ctx.moveTo(CX, CY - l);
+      ctx.lineTo(CX + w, CY);
+      ctx.lineTo(CX, CY + l);
+      ctx.lineTo(CX - w, CY);
+      ctx.closePath();
+      ctx.moveTo(CX - l, CY);
+      ctx.lineTo(CX, CY - w);
+      ctx.lineTo(CX + l, CY);
+      ctx.lineTo(CX, CY + w);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(CX, CY, 3, 0, Math.PI * 2);
+      ctx.fill();
+      return;
+    }
+
+    // The dot swells into the core, white-hot at first and cooling to its own color.
+    const u = (t - BOOT.beams - BOOT.spark) / BOOT.grow;
+    const s = Math.max(3 / this.coreR, easeOutBack(u));
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.scale(s, s);
+    ctx.translate(-CX, -CY);
+    this.drawCore(false);
+    ctx.restore();
+    ctx.globalAlpha = (1 - u) ** 2;
+    ctx.fillStyle = C.white;
+    ctx.beginPath();
+    ctx.arc(CX, CY, this.coreR * s, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
   }
 
   /** Speaker drawn with paths (emoji glyphs vary too much across phones). */
