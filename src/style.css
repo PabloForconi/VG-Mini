@@ -3,8 +3,18 @@ body {
   margin: 0;
   height: 100%;
   background: #0c0a1d;
-  overflow: hidden;
   overscroll-behavior: none;
+}
+
+/*
+ * iOS full-screen web apps under the translucent status bar lay the page out one status bar
+ * short, and clip fixed-position elements there: a strip at the bottom stayed empty. Making
+ * the document that much taller (env() is 0 everywhere else) and placing the canvas in the
+ * document instead of fixing it lets it reach the bottom edge. Nothing scrolls: input.ts
+ * cancels touch moves.
+ */
+html {
+  min-height: calc(100% + env(safe-area-inset-top));
 }
 
 /* A game surface, not a document: no zoom, selection, loupe, callout or tap flash. */
@@ -18,16 +28,10 @@ canvas {
   -webkit-tap-highlight-color: transparent;
 }
 
-body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 canvas {
   display: block;
-  /* Fills the whole window (main.ts sizes it); the play area is centered inside by transform. */
-  position: fixed;
+  /* Fills the whole screen (main.ts sizes it); the play area is centered inside by transform. */
+  position: absolute;
   left: 0;
   top: 0;
 }

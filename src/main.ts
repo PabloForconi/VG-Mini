@@ -52,6 +52,8 @@ function fit() {
   canvas.width = Math.round(w * dpr);
   canvas.height = Math.round(h * dpr);
   ctx.setTransform(scale * dpr, 0, 0, scale * dpr, ox * dpr, oy * dpr);
+  // The canvas sits in the page (see style.css); keep the page pinned at its top.
+  window.scrollTo(0, 0);
   const safeTop = safeProbe.offsetHeight;
   Object.assign(VIEW, { x0: -ox / scale, y0: -oy / scale, w: w / scale, h: h / scale, px: scale * dpr, scale, ox, oy, safeTop });
 }
