@@ -598,21 +598,22 @@ const INTRO = {
 };
 
 /**
- * The core powers on at the start of a run like an old TV, in two moves (seconds after the
- * start tap): a big cross of light shoots in onto the center, slowing as it closes, into a
- * point; then the point bursts open into the core like a small big bang,
- * springing past its size and settling, while the vortex motes fly out of it to their orbits.
+ * The core powers on at the start of a run like an old TV switching off, played backwards into
+ * a bang (seconds after the start tap): the screen goes white and squashes from top and bottom
+ * into a thin line across the middle, the line shrinks from the sides into a point, the point
+ * holds a beat, and then it bursts open into the core like a small big bang, springing past its
+ * size and settling, while the vortex motes fly out of it to their orbits.
  */
 const BOOT = {
-  beams: 0.4, // the cross closes, accelerating
-  beamReach: 80, // the arms (long triangles) start this far past the screen's edges
-  beamWidth: 10, // half-width of each arm's base at the start …
-  beamEndWidth: 1, // … thinning down to this as it closes; it ends as long as the core's radius
-  flash: 0.3, // a white flash over the whole screen as it all starts, fading out
+  squash: 0.12, // white screen → a line across the middle
+  shrink: 0.18, // line → a point
+  hold: 0.1, // the point waits a beat
+  lineWidth: 2, // thickness of the line, and the point's diameter is 3 times it
   grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
   motesStagger: 0.12, // the last mote leaves the center this long after the first
 };
-const BOOT_END = BOOT.beams + BOOT.grow;
+const BOOT_BANG = BOOT.squash + BOOT.shrink + BOOT.hold;
+const BOOT_END = BOOT_BANG + BOOT.grow;
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 /**
@@ -1016,7 +1017,7 @@ export class Growcore implements MiniGame {
     music.level = LEVEL_BY_PHASE[0];
     // The music comes in with the core's big bang (the player starts ~0.05 s late), easing in
     // so the beat doesn't slam in cold.
-    music.play(DRIVE, { delay: BOOT.beams - 0.05, fade: 1.2 });
+    music.play(DRIVE, { delay: BOOT_BANG - 0.05, fade: 1.2 });
     // The bed stays, ducked and stripped to a drone, under the in-game loop.
     ambient.level = 1;
     ambient.setVolume(0.35, 1.2);
@@ -1040,7 +1041,7 @@ export class Growcore implements MiniGame {
     this.slices = [];
     this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
     this.recordAt = -1;
-    sfx.startSfx(BOOT.beams);
+    sfx.startSfx(BOOT_BANG);
   }
 
   private enterPhase(i: number) {
@@ -1354,14 +1355,34 @@ export class Growcore implements MiniGame {
 
     this.drawHud();
 
-    // The run starts with a white flash over everything (see BOOT).
-    const sinceStart = this.clock - this.startAt;
-    if (this.state === 'playing' && sinceStart < BOOT.flash) {
-      ctx.globalAlpha = 0.9 * (1 - sinceStart / BOOT.flash) ** 2;
-      ctx.fillStyle = C.white;
-      ctx.fillRect(VIEW.x0, VIEW.y0, VIEW.w, VIEW.h);
-      ctx.globalAlpha = 1;
+    if (this.state === 'playing' && this.clock - this.startAt < BOOT_BANG) this.drawPowerOn();
+  }
+
+  /**
+   * The old-TV part of the boot, over everything (HUD included): a white screen squashing into
+   * a line, the line shrinking into a point, the point holding (see BOOT). Each move speeds up
+   * as it goes, like the picture is being sucked in.
+   */
+  private drawPowerOn() {
+    const { ctx } = this;
+    const t = this.clock - this.startAt;
+    const v = VIEW;
+    const line = BOOT.lineWidth;
+    ctx.fillStyle = C.white;
+    if (t < BOOT.squash) {
+      const u = t / BOOT.squash;
+      const h = line + (v.h - line) * (1 - u * u);
+      ctx.fillRect(v.x0, CY - h / 2, v.w, h);
+      return;
     }
+    if (t < BOOT.squash + BOOT.shrink) {
+      const u = (t - BOOT.squash) / BOOT.shrink;
+      const w = v.w * (1 - u * u);
+      ctx.fillRect(CX - w / 2, CY - line / 2, w, line);
+    }
+    ctx.beginPath();
+    ctx.arc(CX, CY, line * 1.5, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   /** Night sky: deep indigo gradient, two faint nebulae and twinkling stars. */
@@ -1670,50 +1691,16 @@ export class Growcore implements MiniGame {
     }
   }
 
-  /** The core powering on like an old TV (see BOOT). */
+  /**
+   * The bang (see BOOT): the point bursts open into the core, white-hot at first and cooling
+   * to its own color, and the vortex motes fly out of its center to their orbits. Stiff
+   * springs, so it opens all at once and then wobbles. Before it, drawPowerOn shows the point.
+   */
   private drawBoot() {
     const { ctx } = this;
-    const t = this.clock - this.startAt;
-    let glow = this.coreGlows.get(C.white);
-    if (!glow) this.coreGlows.set(C.white, (glow = buildCoreGlow(C.white)));
-
-    if (t < BOOT.beams) {
-      // A star of four long, wide triangles (their bases overlap so the center is covered)
-      // shoots in from past the screen's edges and slows as it closes: the arms squash shorter
-      // and thinner until it is a small, sharp star about the size of the newborn core.
-      const u = t / BOOT.beams;
-      const open = (1 - u) ** 2; // 1 = full star … 0 = closed
-      const start = Math.max(VIEW.w, VIEW.h) / 2 + BOOT.beamReach;
-      const len = this.coreR + (start - this.coreR) * open;
-      const w = BOOT.beamEndWidth + (BOOT.beamWidth - BOOT.beamEndWidth) * open;
-      const a = Math.min(1, t / 0.05) * (0.85 + Math.random() * 0.15);
-      const gr = 30 - 6 * u;
-      ctx.drawImage(glow, CX - gr, CY - gr, gr * 2, gr * 2);
-      // Solid white near the center, fading out toward the tips.
-      const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, len);
-      g.addColorStop(0, '#ffffff');
-      g.addColorStop(0.3, '#ffffff');
-      g.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = g;
-      ctx.globalAlpha = a;
-      ctx.beginPath();
-      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
-        // Base sits just behind the center, so the four arms overlap there.
-        ctx.moveTo(CX - dx * w - dy * w, CY - dy * w + dx * w);
-        ctx.lineTo(CX + dx * len, CY + dy * len);
-        ctx.lineTo(CX - dx * w + dy * w, CY - dy * w - dx * w);
-        ctx.closePath();
-      }
-      ctx.fill();
-      ctx.globalAlpha = 1;
-      return;
-    }
-
-    // The bang: the point bursts open into the core, white-hot at first and cooling to its own
-    // color, and the vortex motes fly out of its center to their orbits. Stiff springs, so it
-    // opens all at once and then wobbles.
-    const tg = t - BOOT.beams;
-    const s = Math.max(3 / this.coreR, spring(tg, 30, 0.3));
+    const tg = this.clock - this.startAt - BOOT_BANG;
+    if (tg < 0) return;
+    const s = Math.max((BOOT.lineWidth * 1.5) / this.coreR, spring(tg, 30, 0.3));
     // A thin ring of light flung out by the bang, fading as it goes.
     const ring = clamp01(tg / 0.35);
     if (ring < 1) {

@@ -96,7 +96,7 @@ export function phaseSfx() {
 
 /**
  * Tap to play: the core powers on like an old TV (timed to BOOT in growcore.ts), two sounds.
- * "Chuiiin": a whine that climbs faster and faster as the cross closes in. "Chuuun": the bang
+ * "Chuiiin": a whine that climbs as the white screen collapses into a point. "Chuuun": the bang
  * as the core bursts open, a deep drop with a long tail in the hall.
  * `bang`: seconds until the core bursts open.
  */
