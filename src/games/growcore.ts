@@ -604,9 +604,10 @@ const INTRO = {
  * springing past its size and settling, while the vortex motes fly out of it to their orbits.
  */
 const BOOT = {
-  beams: 0.55, // the cross closes, accelerating
-  beamLen: 240, // half-length of each arm at the start
-  beamWidth: 6, // arm thickness at the start; thins down as it closes
+  beams: 0.4, // the cross closes, accelerating
+  beamLen: 260, // length of each arm (a long triangle) at the start
+  beamWidth: 16, // half-width of each arm's base at the start …
+  beamEndWidth: 1, // … thinning down to this as it closes; it ends as long as the core's radius
   grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
   motesStagger: 0.12, // the last mote leaves the center this long after the first
 };
@@ -1009,7 +1010,8 @@ export class Growcore implements MiniGame {
     this.holdBlocked = true;
     this.holding = false;
     music.level = LEVEL_BY_PHASE[0];
-    music.play(DRIVE, { fade: 0.15 });
+    // The music's intro starts with the core's big bang (the player starts ~0.05 s late).
+    music.play(DRIVE, { delay: BOOT.beams - 0.05, fade: 0.05 });
     // The bed stays, ducked and stripped to a drone, under the in-game loop.
     ambient.level = 1;
     ambient.setVolume(0.35, 1.2);
@@ -1667,38 +1669,33 @@ export class Growcore implements MiniGame {
     if (!glow) this.coreGlows.set(C.white, (glow = buildCoreGlow(C.white)));
 
     if (t < BOOT.beams) {
-      // A big cross closes onto the center, slow at first and faster and faster, into a point
-      // that brightens as it gathers.
+      // A star of four long, wide triangles (their bases overlap so the center is covered)
+      // closes in, slow at first and faster and faster: the arms squash shorter and thinner
+      // until it is a small, sharp star about the size of the newborn core.
       const u = t / BOOT.beams;
-      const open = 1 - u ** 3; // 1 = full cross … 0 = a point
-      const len = BOOT.beamLen * open + 3;
+      const open = 1 - u ** 3; // 1 = full star … 0 = closed
+      const len = this.coreR + (BOOT.beamLen - this.coreR) * open;
+      const w = BOOT.beamEndWidth + (BOOT.beamWidth - BOOT.beamEndWidth) * open;
       const a = Math.min(1, t / 0.05) * (0.85 + Math.random() * 0.15);
-      const gr = 10 + 14 * u;
+      const gr = 30 - 6 * u;
       ctx.drawImage(glow, CX - gr, CY - gr, gr * 2, gr * 2);
-      ctx.lineCap = 'round';
-      for (const [dx, dy] of [[1, 0], [0, 1]]) {
-        const g = ctx.createLinearGradient(CX - dx * len, CY - dy * len, CX + dx * len, CY + dy * len);
-        g.addColorStop(0, 'rgba(255,255,255,0)');
-        g.addColorStop(0.5, '#ffffff');
-        g.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.strokeStyle = g;
-        // A wide faint stroke under a bright one: the beam's glow (no blur).
-        const w = 1.5 + BOOT.beamWidth * open;
-        for (const [width, alpha] of [[w + 6, 0.2], [w, 1]]) {
-          ctx.globalAlpha = a * alpha;
-          ctx.lineWidth = width;
-          ctx.beginPath();
-          ctx.moveTo(CX - dx * len, CY - dy * len);
-          ctx.lineTo(CX + dx * len, CY + dy * len);
-          ctx.stroke();
-        }
-      }
-      ctx.lineCap = 'butt';
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = C.white;
+      // Solid white near the center, fading out toward the tips.
+      const g = ctx.createRadialGradient(CX, CY, 0, CX, CY, len);
+      g.addColorStop(0, '#ffffff');
+      g.addColorStop(0.3, '#ffffff');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.globalAlpha = a;
       ctx.beginPath();
-      ctx.arc(CX, CY, 3, 0, Math.PI * 2);
+      for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+        // Base sits just behind the center, so the four arms overlap there.
+        ctx.moveTo(CX - dx * w - dy * w, CY - dy * w + dx * w);
+        ctx.lineTo(CX + dx * len, CY + dy * len);
+        ctx.lineTo(CX - dx * w + dy * w, CY - dy * w - dx * w);
+        ctx.closePath();
+      }
       ctx.fill();
+      ctx.globalAlpha = 1;
       return;
     }
 

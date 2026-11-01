@@ -128,6 +128,46 @@ export const DRIVE: Track = {
       bell(hz(chord.tones[s ? 1 : 2] + 24), { gain: 0.04, dur: 1.6, wet: 0.7, ...at });
     }
   },
+
+  /**
+   * Two bars that wind up into the loop, so the beat doesn't slam in cold: F then G, landing
+   * on the loop's Am. Bar 1 is a swelling pad, a held bass and a slow bell arpeggio under a
+   * rising sweep of air; bar 2 brings in the kick and hats, doubles the arpeggio and rolls a
+   * snare that speeds up, and a crash marks the loop's first beat.
+   */
+  intro: {
+    steps: 32,
+    step(i, { delay, out, space, stepDur }) {
+      const bar = i >> 4;
+      const s = i & 15;
+      const chord = PROG[bar ? 3 : 1];
+      const at = { delay, dest: out, wetDest: space };
+
+      if (i === 0) noise(stepDur * 32, 0.035, 300, { type: 'bandpass', to: 8000, attack: stepDur * 30, wet: 0.5, ...at });
+      if (s === 0) {
+        for (const n of chord.tones) {
+          tone({ freq: hz(n), dur: stepDur * 16, type: 'triangle', gain: 0.016, attack: stepDur * 8, filter: bar ? 1600 : 900, wet: 0.6, ...at });
+        }
+        tone({ freq: hz(chord.root + 12), dur: stepDur * 16, type: 'triangle', gain: bar ? 0.055 : 0.04, attack: 0.05, filter: 700, ...at });
+      }
+
+      const arp = [...chord.tones.map((n) => n + 12), chord.tones[0] + 24];
+      if (s % (bar ? 2 : 4) === 0) {
+        bell(hz(arp[(s >> (bar ? 1 : 2)) % 4]), { gain: bar ? 0.03 : 0.025, dur: 0.6, wet: 0.5, ...at });
+      }
+
+      if (bar) {
+        if (s % 4 === 0) {
+          tone({ freq: 170, to: 45, dur: 0.2, type: 'sine', gain: 0.24, ...at });
+          noise(0.012, 0.06, 2500, { type: 'highpass', ...at });
+        }
+        if (s % 4 === 2) noise(0.05, 0.05, 7000, { type: 'highpass', ...at });
+        // Snare roll: eighths, then sixteenths, getting louder into the loop.
+        if ((s >= 8 && s % 2 === 0) || s >= 12) noise(0.08, 0.03 + (s - 8) * 0.008, 1500, { type: 'bandpass', wet: 0.3, ...at });
+        if (s === 15) noise(1.4, 0.07, 6000, { type: 'highpass', wet: 0.6, ...at, delay: delay + stepDur });
+      }
+    },
+  },
 };
 
 /** Music intensity per phase index: claps with Citrino, the lead with the shield, then more. */

@@ -16,6 +16,8 @@ export interface Track {
   steps: number; // loop length in 16th notes
   gain: number; // fader level relative to the sound effects
   step(i: number, ctx: StepContext): void;
+  /** Played once, before the loop's first step, every time the track starts. */
+  intro?: { steps: number; step(i: number, ctx: StepContext): void };
 }
 
 const TICK_MS = 30;
@@ -109,14 +111,18 @@ export class Music {
     if (this.nextAt < now - 0.05) this.nextAt = now + 0.02;
     const bpm = track.bpm + (track.bpmPerLevel ?? 0) * this.level;
     const stepDur = 60 / bpm / 4;
+    const intro = track.intro;
+    const introSteps = intro?.steps ?? 0;
     while (this.nextAt < now + LOOKAHEAD) {
-      track.step(this.stepIndex % track.steps, {
+      const ctx = {
         delay: Math.max(0, this.nextAt - now),
         out: this.faders[0],
         space: this.faders[1],
         level: this.level,
         stepDur,
-      });
+      };
+      if (intro && this.stepIndex < introSteps) intro.step(this.stepIndex, ctx);
+      else track.step((this.stepIndex - introSteps) % track.steps, ctx);
       this.nextAt += stepDur;
       this.stepIndex++;
     }
