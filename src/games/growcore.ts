@@ -268,9 +268,10 @@ const TIERS = [
  */
 const STAR_FIELD_R = 720; // covers the corners of tall phones and wide desktop windows alike
 const STAR_SPIN = (Math.PI * 2) / 240; // rad/s: one full turn every 4 minutes
-const STAR_SPIN_PULL = 6; // holding the magnet spins the sky up to this many times faster
-const STAR_SPIN_UP = 1.5; // how fast it winds up while holding (1/s)
-const STAR_SPIN_DOWN = 0.7; // and coasts back down after release, slower, like a heavy wheel
+const STAR_SPIN_PULL = 20; // holding the magnet spins the sky up to this many times faster...
+const STAR_SPIN_RAMP = 4; // ...reached after holding this long (s): the longer the hold, the faster
+const STAR_SPIN_UP = 3; // how closely the spin follows that ramp while holding (1/s)
+const STAR_SPIN_DOWN = 0.8; // and coasts back down after release, slower, like a heavy wheel
 const STARS = (() => {
   let s = 20261031;
   const rnd = () => ((s = Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -863,15 +864,15 @@ export class Growcore implements MiniGame {
       this.holdBlocked = true;
     }
     this.holding = isHolding() && !this.holdBlocked;
+    this.holdTime = this.holding && this.state === 'playing' ? this.holdTime + dt : 0;
 
-    // The sky winds up while the magnet pulls and coasts back to its lazy turn after release.
-    // Only the speed eases; the angle is integrated, so the stars never jump.
-    const pull = this.holding && this.state === 'playing' ? 1 : 0;
+    // The sky winds up the longer the magnet pulls and coasts back to its lazy turn after
+    // release. Only the speed eases; the angle is integrated, so the stars never jump.
+    const pull = Math.min(1, this.holdTime / STAR_SPIN_RAMP);
     this.skyPull += (pull - this.skyPull) * Math.min(1, dt * (pull > this.skyPull ? STAR_SPIN_UP : STAR_SPIN_DOWN));
     this.skyAngle += dt * STAR_SPIN * (1 + (STAR_SPIN_PULL - 1) * this.skyPull);
 
     // The pull's choir brightens and climbs the longer you hold: you hear the greed.
-    this.holdTime = this.holding && this.state === 'playing' ? this.holdTime + dt : 0;
     const h = Math.min(this.holdTime, 2.5);
     this.hum.set(this.holdTime > 0 ? 0.08 + h * 0.024 : 0, h / 2.5);
 
@@ -1730,7 +1731,8 @@ export class Growcore implements MiniGame {
       ctx.strokeStyle = ring < 1 ? C.white : 'rgb(200,190,255)';
       ctx.lineWidth = 3.5 * (1 - ring) + 1.5;
       ctx.beginPath();
-      ctx.arc(CX, CY, this.coreR + easeOutCubic(ring) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
+      // Quintic ease-out: fast off the core, then a long, soft brake into the line.
+      ctx.arc(CX, CY, this.coreR + (1 - (1 - ring) ** 5) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
