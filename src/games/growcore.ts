@@ -268,7 +268,7 @@ const TIERS = [
  */
 const STAR_FIELD_R = 720; // covers the corners of tall phones and wide desktop windows alike
 const STAR_SPIN = (Math.PI * 2) / 240; // rad/s: one full turn every 4 minutes
-const STAR_SPIN_PULL = 20; // holding the magnet spins the sky up to this many times faster...
+const STAR_SPIN_PULL = 40; // holding the magnet spins the sky up to this many times faster...
 const STAR_SPIN_RAMP = 4; // ...reached after holding this long (s): the longer the hold, the faster
 const STAR_SPIN_UP = 3; // how closely the spin follows that ramp while holding (1/s)
 const STAR_SPIN_DOWN = 0.8; // and coasts back down after release, slower, like a heavy wheel
@@ -1731,8 +1731,7 @@ export class Growcore implements MiniGame {
       ctx.strokeStyle = ring < 1 ? C.white : 'rgb(200,190,255)';
       ctx.lineWidth = 3.5 * (1 - ring) + 1.5;
       ctx.beginPath();
-      // Quintic ease-out: fast off the core, then a long, soft brake into the line.
-      ctx.arc(CX, CY, this.coreR + (1 - (1 - ring) ** 5) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
+      ctx.arc(CX, CY, this.coreR + easeOutCubic(ring) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
