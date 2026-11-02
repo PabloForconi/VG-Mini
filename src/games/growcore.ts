@@ -49,10 +49,11 @@ const T = {
   tiltMax: 0.35, // max gem lean while pulled (~20°)
   tiltSpeed: 450, // sideways pull speed (px/s) that reaches tiltMax
   // Cash-out shockwave: a ring leaves the core edge and shoves everything it passes outward.
-  waveReach: 110, // how far past the core edge it pushes, smallest core
-  waveReachGrowth: 190, // extra reach at max core size
-  waveImpulse: 520, // px/s given to a mass-1 item touching the core edge, smallest core
-  waveImpulseGrowth: 1.6, // extra impulse (fraction) at max core size
+  waveReach: 50, // how far past the core edge it pushes, smallest core
+  waveReachGrowth: 250, // extra reach at max core size
+  waveImpulse: 100, // px/s given to a mass-1 item touching the core edge, smallest core
+  waveImpulseGrowth: 1250, // extra px/s at max core size
+  waveCurve: 2, // impulse grows with size^this: a gentle nudge until the core gets big
   waveSpeed: 700, // px/s the ring travels
 };
 
@@ -267,6 +268,9 @@ const TIERS = [
  */
 const STAR_FIELD_R = 720; // covers the corners of tall phones and wide desktop windows alike
 const STAR_SPIN = (Math.PI * 2) / 240; // rad/s: one full turn every 4 minutes
+const STAR_SPIN_PULL = 6; // holding the magnet spins the sky up to this many times faster
+const STAR_SPIN_UP = 1.5; // how fast it winds up while holding (1/s)
+const STAR_SPIN_DOWN = 0.7; // and coasts back down after release, slower, like a heavy wheel
 const STARS = (() => {
   let s = 20261031;
   const rnd = () => ((s = Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
@@ -611,6 +615,8 @@ const BOOT = {
   lineWidth: 2, // thickness of the line, and the point's diameter is 3 times it
   grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
   motesStagger: 0.12, // the last mote leaves the center this long after the first
+  ring: 0.45, // the bang's ring of light runs out to the field line, thinning as it goes
+  fuse: 0.15, // then melts into the dotted line, which only appears now (ring + fuse <= grow)
 };
 const BOOT_BANG = BOOT.squash + BOOT.shrink + BOOT.hold;
 const BOOT_END = BOOT_BANG + BOOT.grow;
@@ -729,6 +735,8 @@ export class Growcore implements MiniGame {
   private vortexT = 0; // infall phase; advances faster while the magnet is held
   private vortexOpen = 0; // 0 = snug and slow (idle) … 1 = wide and fast (long hold)
   private vortexSpin = VORTEX.spinIdle; // current spin (rad/s at the core edge), with inertia
+  private skyAngle = 0; // the star field's turn
+  private skyPull = 0; // 0 → 1: how wound up the sky's spin is by the magnet
   // Each mote's own orbit angle, integrated every tick so inner motes really do lap outer ones.
   private moteAngles = Float32Array.from({ length: VORTEX.count }, (_, i) => i * 2.39996);
   private hum = new Shimmer(sfx.PULL_VOICES);
@@ -855,6 +863,12 @@ export class Growcore implements MiniGame {
       this.holdBlocked = true;
     }
     this.holding = isHolding() && !this.holdBlocked;
+
+    // The sky winds up while the magnet pulls and coasts back to its lazy turn after release.
+    // Only the speed eases; the angle is integrated, so the stars never jump.
+    const pull = this.holding && this.state === 'playing' ? 1 : 0;
+    this.skyPull += (pull - this.skyPull) * Math.min(1, dt * (pull > this.skyPull ? STAR_SPIN_UP : STAR_SPIN_DOWN));
+    this.skyAngle += dt * STAR_SPIN * (1 + (STAR_SPIN_PULL - 1) * this.skyPull);
 
     // The pull's choir brightens and climbs the longer you hold: you hear the greed.
     this.holdTime = this.holding && this.state === 'playing' ? this.holdTime + dt : 0;
@@ -1189,7 +1203,7 @@ export class Growcore implements MiniGame {
       at: this.clock,
       r0: this.coreR,
       reach: T.waveReach + T.waveReachGrowth * g,
-      impulse: T.waveImpulse * (1 + T.waveImpulseGrowth * g),
+      impulse: T.waveImpulse + T.waveImpulseGrowth * g ** T.waveCurve,
       color: tier.left,
     };
 
@@ -1410,8 +1424,8 @@ export class Growcore implements MiniGame {
     ctx.fillStyle = '#ffffff';
     const x1 = v.x0 + v.w;
     const y1 = v.y0 + v.h;
-    const cos = Math.cos(this.clock * STAR_SPIN);
-    const sin = Math.sin(this.clock * STAR_SPIN);
+    const cos = Math.cos(this.skyAngle);
+    const sin = Math.sin(this.skyAngle);
     for (const s of STARS) {
       const x = CX + s.x * cos - s.y * sin;
       const y = CY + s.x * sin + s.y * cos;
@@ -1478,7 +1492,13 @@ export class Growcore implements MiniGame {
     ctx.save();
     ctx.lineWidth = 1.5;
     ctx.setLineDash([3, 7]);
-    ctx.strokeStyle = `rgba(200,190,255,${active ? 0.35 : 0.12})`;
+    // At the start, the line only shows up once the bang's ring has reached it (see drawBoot).
+    const born = clamp01((this.clock - this.startAt - BOOT_BANG - BOOT.ring) / BOOT.fuse);
+    if (this.state === 'playing' && born === 0) {
+      ctx.restore();
+      return;
+    }
+    ctx.strokeStyle = `rgba(200,190,255,${(active ? 0.35 : 0.12) * (this.state === 'playing' ? born : 1)})`;
     ctx.beginPath();
     ctx.arc(CX, CY, field, 0, Math.PI * 2);
     ctx.stroke();
@@ -1701,14 +1721,16 @@ export class Growcore implements MiniGame {
     const tg = this.clock - this.startAt - BOOT_BANG;
     if (tg < 0) return;
     const s = Math.max((BOOT.lineWidth * 1.5) / this.coreR, spring(tg, 30, 0.3));
-    // A thin ring of light flung out by the bang, fading as it goes.
-    const ring = clamp01(tg / 0.35);
-    if (ring < 1) {
-      ctx.globalAlpha = (1 - ring) ** 2 * 0.8;
-      ctx.strokeStyle = C.white;
-      ctx.lineWidth = 3 * (1 - ring) + 0.5;
+    // A ring of light flung out by the bang. It slows into the field line, thinning and dimming
+    // down to that line's look, then melts into it as the dotted line appears (see drawField).
+    const ring = clamp01(tg / BOOT.ring);
+    const fuse = clamp01((tg - BOOT.ring) / BOOT.fuse);
+    if (fuse < 1) {
+      ctx.globalAlpha = (0.12 + 0.68 * (1 - ring) ** 2) * (1 - fuse);
+      ctx.strokeStyle = ring < 1 ? C.white : 'rgb(200,190,255)';
+      ctx.lineWidth = 3.5 * (1 - ring) + 1.5;
       ctx.beginPath();
-      ctx.arc(CX, CY, this.coreR + easeOutCubic(ring) * 70, 0, Math.PI * 2);
+      ctx.arc(CX, CY, this.coreR + easeOutCubic(ring) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
