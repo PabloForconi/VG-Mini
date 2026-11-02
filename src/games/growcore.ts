@@ -616,8 +616,8 @@ const BOOT = {
   lineWidth: 2, // thickness of the line, and the point's diameter is 3 times it
   grow: 0.6, // the bang: the point bursts into the core, wobbling to rest
   motesStagger: 0.12, // the last mote leaves the center this long after the first
-  ring: 0.45, // the bang's ring of light runs out to the field line, thinning as it goes
-  fuse: 0.15, // then melts into the dotted line, which only appears now (ring + fuse <= grow)
+  ring: 1, // the bang's ring of light runs out to the field line, thinning and braking softly
+  fuse: 0.25, // then melts into the dotted line, which only appears now
 };
 const BOOT_BANG = BOOT.squash + BOOT.shrink + BOOT.hold;
 const BOOT_END = BOOT_BANG + BOOT.grow;
@@ -1328,7 +1328,10 @@ export class Growcore implements MiniGame {
 
     this.drawScenery(active);
     if (this.state === 'playing' || this.state === 'over') this.drawField(active);
-    if (this.state === 'playing') this.drawWave();
+    if (this.state === 'playing') {
+      this.drawWave();
+      this.drawBootRing();
+    }
 
     const field = this.fieldRadius;
     ctx.lineWidth = 1;
@@ -1722,19 +1725,6 @@ export class Growcore implements MiniGame {
     const tg = this.clock - this.startAt - BOOT_BANG;
     if (tg < 0) return;
     const s = Math.max((BOOT.lineWidth * 1.5) / this.coreR, spring(tg, 30, 0.3));
-    // A ring of light flung out by the bang. It slows into the field line, thinning and dimming
-    // down to that line's look, then melts into it as the dotted line appears (see drawField).
-    const ring = clamp01(tg / BOOT.ring);
-    const fuse = clamp01((tg - BOOT.ring) / BOOT.fuse);
-    if (fuse < 1) {
-      ctx.globalAlpha = (0.12 + 0.68 * (1 - ring) ** 2) * (1 - fuse);
-      ctx.strokeStyle = ring < 1 ? C.white : 'rgb(200,190,255)';
-      ctx.lineWidth = 3.5 * (1 - ring) + 1.5;
-      ctx.beginPath();
-      ctx.arc(CX, CY, this.coreR + easeOutCubic(ring) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
     this.drawVortex(tg);
     ctx.save();
     ctx.translate(CX, CY);
@@ -1747,6 +1737,27 @@ export class Growcore implements MiniGame {
     ctx.beginPath();
     ctx.arc(CX, CY, this.coreR * s, 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  /**
+   * A ring of light flung out by the bang. It slows into the field line, thinning and dimming
+   * down to that line's look, then melts into it as the dotted line appears (see drawField).
+   * Outlives the rest of the boot, so it has time for a long, soft brake.
+   */
+  private drawBootRing() {
+    const tg = this.clock - this.startAt - BOOT_BANG;
+    if (tg < 0 || tg > BOOT.ring + BOOT.fuse) return;
+    const { ctx } = this;
+    const ring = clamp01(tg / BOOT.ring);
+    const fuse = clamp01((tg - BOOT.ring) / BOOT.fuse);
+    ctx.globalAlpha = (0.12 + 0.68 * (1 - ring) ** 2) * (1 - fuse);
+    ctx.strokeStyle = ring < 1 ? C.white : 'rgb(200,190,255)';
+    ctx.lineWidth = 3.5 * (1 - ring) + 1.5;
+    ctx.beginPath();
+    // Quartic ease-out: quick off the core, then it glides in slower and slower.
+    ctx.arc(CX, CY, this.coreR + (1 - (1 - ring) ** 4) * (this.fieldRadius - this.coreR), 0, Math.PI * 2);
+    ctx.stroke();
     ctx.globalAlpha = 1;
   }
 
