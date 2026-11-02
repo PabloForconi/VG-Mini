@@ -13,6 +13,14 @@ let muted = loadNumber('muted') === 1;
 
 function unlock() {
   if (!ac) {
+    // iOS (Safari 17+): an "ambient" session obeys the silent switch and mixes with other apps'
+    // music instead of stopping it.
+    try {
+      const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+      if (session && session.type !== 'ambient') session.type = 'ambient';
+    } catch {
+      // Not supported here; the default already respects the silent switch.
+    }
     ac = new AudioContext();
     master = ac.createGain();
     master.gain.value = muted ? 0 : 0.7;
@@ -21,9 +29,27 @@ function unlock() {
     reverb.buffer = hallImpulse(ac, 2.8);
     reverb.connect(master);
   }
-  if (ac.state === 'suspended') void ac.resume();
+  // iOS can leave it 'interrupted' (a call, the lock screen) and only lets a tap bring it back.
+  if (ac.state !== 'running') ac.resume().catch(() => {});
 }
 window.addEventListener('pointerdown', unlock);
+
+/**
+ * Hidden page (locked screen, another app): timers that schedule the music get throttled while
+ * the audio clock keeps running, so notes would trickle out slow and broken. Pausing the clock
+ * instead freezes the music exactly where it was until the page shows again.
+ */
+function sleep(hide: boolean) {
+  if (!ac) return;
+  if (hide) {
+    if (ac.state === 'running') ac.suspend().catch(() => {});
+  } else if (ac.state !== 'running') ac.resume().catch(() => {});
+}
+document.addEventListener('visibilitychange', () => sleep(document.hidden));
+window.addEventListener('pagehide', () => sleep(true));
+window.addEventListener('pageshow', () => {
+  if (!document.hidden) sleep(false);
+});
 // Older iOS only grants audio on touchend; input.ts cancels its default, but it still bubbles here.
 window.addEventListener('touchend', unlock);
 window.addEventListener('keydown', (e) => {

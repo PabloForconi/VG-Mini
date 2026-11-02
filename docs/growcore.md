@@ -146,6 +146,10 @@ reverb de sala compartida. Código: `src/engine/audio.ts` (síntesis, reverb, `b
 `Shimmer`), `src/engine/music.ts` (secuenciador), `src/games/growcore-music.ts` (temas)
 y `src/games/growcore-sfx.ts` (efectos).
 
+En el iPhone el audio es de tipo "ambiente": respeta el modo silencio y no corta la música
+de otras apps (Spotify sigue sonando). Con la pantalla bloqueada o el juego en segundo plano
+el audio se pausa, y al volver la música sigue justo donde estaba.
+
 | Momento | Música |
 | --- | --- |
 | Entrada | Pantalla **TOCÁ PARA ENTRAR**: el navegador no deja sonar nada hasta el primer toque, así que ese toque despierta el audio y recién ahí entra el título, con sonido. Si el juego está muteado, se saltea. |
