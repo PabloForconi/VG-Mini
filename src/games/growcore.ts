@@ -2,7 +2,7 @@ import { isMuted, setMuted, Shimmer, vibrate } from '../engine/audio';
 import { isHolding, pointer, takePress } from '../engine/input';
 import { ambient, music } from '../engine/music';
 import { loadJSON, loadNumber, saveJSON, saveNumber } from '../engine/storage';
-import { AMBIENT, DRIVE, LEVEL_BY_PHASE, loseStinger, zeroPointsFx } from './growcore-music';
+import { AMBIENT, DRIVE, LEVEL_BY_PHASE, loseStinger } from './growcore-music';
 import * as sfx from './growcore-sfx';
 import { HEIGHT, VIEW, WIDTH, toGame, type MiniGame } from './MiniGame';
 
@@ -22,6 +22,7 @@ const START_RULES: { text: string; warn?: boolean }[] = [
   { text: 'Tocá el núcleo para liberar la carga.' },
   { text: '¡Cuidado con las bombas!', warn: true },
 ];
+const RECORD_TAG_TIME = 3; // seconds "RÉCORD ALCANZADO" stays up (the last 0.6 fading out)
 /** Coins are still earned and saved, just not shown until there is something to spend them on. */
 const SHOW_COINS = false;
 const START_TIPS =['Más pesado, más puntos.', 'Más carga, más multiplicador.'];
@@ -166,6 +167,8 @@ const KINDS: Record<Kind, KindDef> = {
 const STAR_GEM: Record<StarKind, Kind> = { starCyan: 'cyan' };
 /** After a star: this long with only its gems coming in, faster than normal spawns. */
 const FRENZY = { time: 5, interval: 0.18 };
+/** Run start: no bombs for this long, Celestinas coming in a bit faster, so the first pull is safe. */
+const OPENING = { safe: 5, interval: 0.5 };
 
 /** How many slices each shield has; a mine breaks only the slice it hits. */
 const SHIELD_SLICES: Record<ShieldKind, number> = { shield: 1, pizza: 6 };
@@ -292,6 +295,7 @@ const SHIELD_DROP_MAX = 18;
 const STAR_DROP_MIN = 20; // seconds between random bonus star drops
 const STAR_DROP_MAX = 30;
 const DROP_GAP = 3; // a star and a shield never drop closer together than this (s)
+const STAR_EASE_STEPS = 3; // catches of a color until its stars fly like any other drop
 const MAX_MINE_STREAK = 2;
 
 /** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
@@ -751,6 +755,7 @@ export class Growcore implements MiniGame {
   private starTimer = 0; // countdown to the next random bonus star drop
   private frenzyAt = -99; // when the last bonus star was caught (clock)
   private frenzyGem: Kind = 'cyan'; // what pours in during that frenzy
+  private starsCaught: Partial<Record<StarKind, number>> = {}; // this run, per color (see spawnStar)
   private shieldKind: ShieldKind | null = null;
   private slices: boolean[] = []; // which shield slices are still up
   private wave: Wave = { id: 0, at: -99, r0: 0, reach: 0, impulse: 0, color: '' };
@@ -953,8 +958,8 @@ export class Growcore implements MiniGame {
     }
     if (this.state === 'over') {
       this.updateResultsFx();
-      // The bed swells back once the stinger (or the sad trombone, which runs longer) is done.
-      if (!this.bedBack && this.clock - this.overAt > (this.score === 0 ? 2.4 : 1.8)) {
+      // The bed swells back once the stinger is done.
+      if (!this.bedBack && this.clock - this.overAt > 1.8) {
         this.bedBack = true;
         ambient.setVolume(1, 2.5);
       }
@@ -968,12 +973,16 @@ export class Growcore implements MiniGame {
     const next = PHASES[this.phase + 1];
     if (next && this.time >= next.at) this.enterPhase(this.phase + 1);
 
-    // During a bonus frenzy only its gems pour in, faster; the bag waits where it was.
+    // During a bonus frenzy only its gems pour in, faster; the bag waits where it was. The run
+    // opens the same way, with a short safe stretch of Celestinas to pull in freely.
     const frenzy = this.frenzyLeft > 0;
+    const opening = this.time < OPENING.safe;
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      this.spawn(frenzy ? this.frenzyGem : this.nextKind());
-      this.spawnTimer = frenzy ? FRENZY.interval : PHASES[this.phase].interval;
+      const kind = frenzy ? this.frenzyGem : opening ? 'cyan' : this.nextKind();
+      if (isStar(kind)) this.spawnStar(kind);
+      else this.spawn(kind);
+      this.spawnTimer = frenzy ? FRENZY.interval : opening ? OPENING.interval : PHASES[this.phase].interval;
     }
 
     const drops = PHASES[this.phase].shields;
@@ -989,7 +998,7 @@ export class Growcore implements MiniGame {
     if (stars && !frenzy) {
       this.starTimer -= dt;
       if (this.starTimer <= 0) {
-        this.spawn(stars[Math.floor(Math.random() * stars.length)]);
+        this.spawnStar(stars[Math.floor(Math.random() * stars.length)]);
         this.starTimer = rand(STAR_DROP_MIN, STAR_DROP_MAX);
         this.shieldTimer = Math.max(this.shieldTimer, DROP_GAP);
       }
@@ -1111,6 +1120,7 @@ export class Growcore implements MiniGame {
     this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
     this.starTimer = rand(STAR_DROP_MIN, STAR_DROP_MAX);
     this.frenzyAt = -99;
+    this.starsCaught = {};
     this.shieldKind = null;
     this.slices = [];
     this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
@@ -1175,7 +1185,11 @@ export class Growcore implements MiniGame {
     return kind;
   }
 
-  private spawn(kind: Kind) {
+  /**
+   * `ease` (0–1) bends the trajectory toward an easy catch: at 1 it passes as close to the core
+   * as anything may and drifts slower, so it lingers in the field.
+   */
+  private spawn(kind: Kind, ease = 0) {
     // Enter from a random edge, just off the visible screen; on very wide/tall screens no
     // farther than SPAWN_REACH from the play area (they fade in, so that never pops).
     const v = VIEW;
@@ -1191,9 +1205,9 @@ export class Growcore implements MiniGame {
     const toCore = Math.atan2(CY - y, CX - x);
     const dist = Math.hypot(CX - x, CY - y);
     const missMin = Math.max(T.missMin, this.coreR + 45);
-    const miss = rand(missMin, Math.max(missMin, T.missMax));
+    const miss = rand(missMin, Math.max(missMin, T.missMax * (1 - ease) + missMin * ease));
     const ang = toCore + Math.asin(Math.min(1, miss / dist)) * (Math.random() < 0.5 ? -1 : 1);
-    const speed = Math.min(T.driftCap, rand(T.driftMin, T.driftMax) + this.time * T.driftRamp);
+    const speed = Math.min(T.driftCap, rand(T.driftMin, T.driftMax) + this.time * T.driftRamp) * (1 - 0.4 * ease);
 
     this.bodies.push({
       kind,
@@ -1254,6 +1268,7 @@ export class Growcore implements MiniGame {
   private catchStar(kind: StarKind) {
     const gem = STAR_GEM[kind];
     const k = KINDS[gem];
+    this.starsCaught[kind] = (this.starsCaught[kind] ?? 0) + 1;
     for (const b of this.bodies) {
       if (b.dead || !isDeadly(b.kind)) continue;
       b.kind = gem;
@@ -1268,6 +1283,14 @@ export class Growcore implements MiniGame {
     this.popup(CX, CY - this.coreR - 18, '¡ESTRELLA!', k.light, 18);
     sfx.starSfx();
     vibrate([20, 30, 20]);
+  }
+
+  /**
+   * Bonus stars start as easy catches and get harder each time one of that color is caught this
+   * run, down to an ordinary drop's trajectory (STAR_EASE_STEPS catches): never out of reach.
+   */
+  private spawnStar(kind: StarKind) {
+    this.spawn(kind, Math.max(0, 1 - (this.starsCaught[kind] ?? 0) / STAR_EASE_STEPS));
   }
 
   /** Seconds left of the bonus frenzy (0 when there is none). */
@@ -1329,8 +1352,7 @@ export class Growcore implements MiniGame {
     // The music cuts dead; a run with no points at all gets the sad trombone instead of the stinger.
     // The bed drops out too, and swells back with its chords once the results have settled.
     music.stop(0.04);
-    if (this.score === 0) zeroPointsFx();
-    else loseStinger();
+    loseStinger();
     ambient.level = 0;
     ambient.setVolume(0, 0.1);
     this.bedBack = false;
@@ -2254,13 +2276,14 @@ export class Growcore implements MiniGame {
     ctx.globalAlpha = 1;
   }
 
-  /** "RÉCORD ALCANZADO" above the score: pops in when the run passes the best, then stays. */
+  /** "RÉCORD ALCANZADO" above the score: pops in when the run passes the best, then fades away. */
   private drawRecordTag() {
     const { ctx } = this;
     const t = this.clock - this.recordAt;
+    if (t > RECORD_TAG_TIME) return;
     const s = 1 + pop(t) * 2;
     ctx.save();
-    ctx.globalAlpha = Math.min(1, t * 5);
+    ctx.globalAlpha = Math.min(1, t * 5, (RECORD_TAG_TIME - t) / 0.6);
     ctx.translate(CX, this.hudTop + 19);
     ctx.scale(s, s);
     ctx.textAlign = 'center';

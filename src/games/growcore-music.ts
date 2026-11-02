@@ -138,11 +138,3 @@ export function loseStinger() {
   [76, 72, 69, 64].forEach((n, i) => bell(hz(n), { gain: 0.09, dur: i === 3 ? 2.2 : 0.9, wet: 0.7, delay: 0.1 + i * 0.14 }));
   tone({ freq: hz(45), to: hz(33), dur: 1.2, type: 'sine', gain: 0.22, delay: 0.1, wet: 0.4 });
 }
-
-/** Dying without a single point: a sad "wah wah wah waaah", the last note wobbling. */
-export function zeroPointsFx() {
-  [55, 54, 53].forEach((n, i) =>
-    tone({ freq: hz(n), dur: 0.3, type: 'sawtooth', gain: 0.11, attack: 0.03, filter: 1100, wet: 0.2, delay: 0.35 + i * 0.34 }),
-  );
-  tone({ freq: hz(52), to: hz(50), dur: 1.1, type: 'sawtooth', gain: 0.11, attack: 0.03, filter: 1100, vibrato: 5, wet: 0.2, delay: 0.35 + 3 * 0.34 });
-}

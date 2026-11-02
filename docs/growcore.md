@@ -55,6 +55,10 @@ puntaje, se ve "FASE N".
 | 9 (sin cartel) | 160 s | 2 celestes, 2 amarillas, 1 rosa, 3 minas, 1 falsa grande, 1 falsa mediana | 0,36 s | simple o pizza | celeste |
 | 10 (sin cartel) | 185 s | 2 celestes, 2 amarillas, 1 rosa, 2 minas, 1 falsa de cada tamaño | 0,36 s | simple o pizza | celeste |
 
+**Arranque seguro:** los primeros 5 s de cada partida no hay bombas: solo entran
+Celestinas, una cada 0,5 s (`OPENING`), así siempre se puede mantener y succionar un
+rato al empezar. La primera bomba sale a los ~6 s.
+
 **Bolsa en vez de dado:** las apariciones se reparten de una bolsa mezclada con la
 mezcla de la fase, así las proporciones se cumplen siempre (sin rachas raras ni
 minutos sin rosas). Además nunca salen más de 2 mortales seguidos (minas o cristales falsos); un escudo corta la racha. La velocidad de los
@@ -106,6 +110,17 @@ atraparla:
   BONUS!" a los 25 s y después cae al azar cada 20–30 s, nunca a menos de 3 s de un
   escudo ni durante un frenesí. Si convence, se suman la amarilla (~67 s) y la rosa
   (~120 s).
+- **Primero fáciles, después normales:** en cada partida, las primeras estrellas de un
+  color pasan cerca del núcleo y lentas; cada una que atrapás de ese color hace que la
+  siguiente pase más lejos y más rápido, hasta quedar como cualquier otro ítem a la 3.ª
+  (`STAR_EASE_STEPS`). Si no la atrapás, la próxima sigue igual de fácil.
+
+  | Atrapadas de ese color | Pasa a (del centro) | Tiempo dentro del campo |
+  | --- | --- | --- |
+  | 0 | ~70 px | ~11,7 s |
+  | 1 | ~90 px | ~9,5 s |
+  | 2 | ~110 px | ~7,4 s |
+  | 3 o más | ~135 px | ~5,9 s |
 
 ## Cobro por tramos
 
@@ -173,7 +188,7 @@ el audio se pausa, y al volver la música sigue justo donde estaba.
 | Entrada | Pantalla **TOCÁ PARA ENTRAR**: el navegador no deja sonar nada hasta el primer toque, así que ese toque despierta el audio y recién ahí entra el título, con sonido. Si el juego está muteado, se saltea. |
 | Inicio y resultados | **Ambiente**: 60 BPM, sin percusión. Acordes que crecen despacio (2 compases cada uno), una melodía lenta de campanas y un destello cada 4 compases, todo con mucha reverb. Nunca se corta. |
 | Partida | El **Ambiente** sigue de fondo al 35 %, reducido a un dron La–Mi que no choca con ningún acorde. Encima, **Empuje**: entra con el big bang del núcleo, subiendo de volumen en 1,2 s para no arrancar de golpe. 126 BPM con bombo, bajo, hi-hats, colchón y arpegio de campanas. Cada nivel suma capas y 2 BPM: palmas y bajo más movido con Citrino (fase 2), melodía en semicorcheas con el Escudo (fase 3), hi-hats rodando y un sub grave con el Super Escudo (fase 5), hi-hats abiertos y contramelodía de campanas con los Cristales falsos (fase 7+). |
-| Al perder | El Empuje se corta en seco y el Ambiente se calla; suenan campanas que caen sobre un golpe grave (**stinger**). Con **0 puntos**, en vez del stinger, un "wah wah wah waaah" triste. A los ~2 s el Ambiente vuelve a subir con sus acordes. |
+| Al perder | El Empuje se corta en seco y el Ambiente se calla; suenan campanas que caen sobre un golpe grave (**stinger**), también con 0 puntos. A los ~2 s el Ambiente vuelve a subir con sus acordes. |
 
 | Efecto | Sonido |
 | --- | --- |
@@ -227,8 +242,8 @@ gancho de reintento:
 - Si es el mejor: "¡NUEVO RÉCORD!" + "Superaste tu récord por 93".
 
 **Récord en vivo:** durante la partida, en cuanto el puntaje pasa tu mejor partida
-anterior aparece "RÉCORD ALCANZADO" arriba del puntaje (con un arpegio corto) y queda
-hasta el final. En la primera partida no aparece: no hay nada que superar.
+anterior aparece "RÉCORD ALCANZADO" arriba del puntaje (con un arpegio corto), queda 3 s y se
+desvanece (`RECORD_TAG_TIME`). En la primera partida no aparece: no hay nada que superar.
 - La primera vez: "Tu primera partida".
 
 Todo entra animado en ~1,3 s (velo, conteo rápido del puntaje con "pop" y chispas,
