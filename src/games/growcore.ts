@@ -2309,20 +2309,23 @@ export class Growcore implements MiniGame {
     ctx.fillRect(VIEW.x0, VIEW.y0, VIEW.w, VIEW.h);
     ctx.textAlign = 'center';
 
+    // Without the coins line under it, the score (and the lost-gems line above it) sits lower,
+    // closing the gap down to the ladder.
+    const lower = SHOW_COINS ? 0 : 28;
     if (this.lostGems > 0) {
       const a = beat(RES.lost, 0.2);
       ctx.globalAlpha = a;
       ctx.fillStyle = C.danger;
       ctx.font = font(600, 15);
       const drop = (1 - easeOutCubic(a)) * -12;
-      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'cristal' : 'cristales'}`, CX, 104 + drop);
+      ctx.fillText(`Perdiste ${this.lostGems} ${this.lostGems === 1 ? 'cristal' : 'cristales'}`, CX, 104 + lower + drop);
       ctx.globalAlpha = 1;
     }
 
     // Score counts up fast, then pops; coins follow the same way.
     const shownScore = Math.round(this.score * easeOutCubic(beat(RES.countStart, RES.countEnd - RES.countStart)));
     ctx.globalAlpha = beat(RES.lost, 0.15);
-    this.drawPopped(String(shownScore), font(700, 72), C.ink, 180, 26, pop(t - RES.countEnd));
+    this.drawPopped(String(shownScore), font(700, 72), C.ink, 180 + lower, 26, pop(t - RES.countEnd));
     if (SHOW_COINS) {
       const shownCoins = Math.round(this.runCoins * easeOutCubic(beat(RES.coinsStart, RES.coinsEnd - RES.coinsStart)));
       ctx.globalAlpha = beat(RES.coinsStart, 0.12);
