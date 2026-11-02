@@ -131,7 +131,7 @@ export const DRIVE: Track = {
 };
 
 /** Music intensity per phase index: claps with Citrino, the lead with the shield, then more. */
-export const LEVEL_BY_PHASE = [0, 1, 2, 2, 3, 3, 4, 4, 4];
+export const LEVEL_BY_PHASE = [0, 1, 1, 2, 2, 3, 3, 4, 4, 4];
 
 /** Cuts the music: falling glass bells over a deep, slow boom. */
 export function loseStinger() {

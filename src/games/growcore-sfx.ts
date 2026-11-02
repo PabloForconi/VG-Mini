@@ -53,6 +53,18 @@ export function shieldSfx() {
   whoosh(800, 4000, 0.6, 0.05);
 }
 
+/**
+ * Bonus star caught: the bombs turn to crystal. A quick glittering run up two octaves, a warm
+ * open chord blooming underneath and a breath of air sweeping up: a long, generous moment.
+ */
+export function starSfx() {
+  [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].forEach((s, i) => bell(note(s + 2), { gain: 0.07, dur: 1.2, delay: i * 0.035, wet: 0.75 }));
+  for (const [freq, gain] of PULL_VOICES.slice(0, 3)) {
+    tone({ freq, dur: 2.4, type: 'sine', gain: gain * 0.12, attack: 0.15, wet: 0.85 });
+  }
+  whoosh(600, 6000, 0.7, 0.07);
+}
+
 /** A bomb shatters on the shield: a bright glass ting over a muffled thump. */
 export function blockSfx() {
   bell(2637, { gain: 0.1, dur: 1.4, wet: 0.7 });

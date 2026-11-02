@@ -22,7 +22,9 @@ const START_RULES: { text: string; warn?: boolean }[] = [
   { text: 'Tocá el núcleo para liberar la carga.' },
   { text: '¡Cuidado con las bombas!', warn: true },
 ];
-const START_TIPS = ['Más pesado, más puntos.', 'Más carga, más multiplicador.'];
+/** Coins are still earned and saved, just not shown until there is something to spend them on. */
+const SHOW_COINS = false;
+const START_TIPS =['Más pesado, más puntos.', 'Más carga, más multiplicador.'];
 const CX = WIDTH / 2;
 const CY = HEIGHT / 2;
 
@@ -59,7 +61,8 @@ const T = {
 
 type ShieldKind = 'shield' | 'pizza';
 type FakeKind = 'fakeCyan' | 'fakeYellow' | 'fakePink';
-type Kind = 'cyan' | 'yellow' | 'pink' | 'mine' | ShieldKind | FakeKind;
+type StarKind = 'starCyan';
+type Kind = 'cyan' | 'yellow' | 'pink' | 'mine' | ShieldKind | FakeKind | StarKind;
 
 /**
  * Extra mass of a fake gem over the real gem it imitates. 0 = arrives exactly as fast as the
@@ -144,13 +147,32 @@ const KINDS: Record<Kind, KindDef> = {
   fakeCyan: { ...FAKE_LOOK, r: 7, mass: 1 + FAKE_MASS_EXTRA },
   fakeYellow: { ...FAKE_LOOK, r: 9, mass: 2 + FAKE_MASS_EXTRA },
   fakePink: { ...FAKE_LOOK, r: 11, mass: 3 + FAKE_MASS_EXTRA },
+  // Bonus stars: a star of the gem's color in a bubble, as heavy as the plain shield.
+  starCyan: {
+    r: 11,
+    mass: 2.2,
+    value: 0,
+    load: 0,
+    color: '#7fcabc',
+    light: '#b2e6dc',
+    dark: '#4f9e91',
+    name: 'Estrella',
+    hue: 'Celeste',
+    blurb: 'Las bombas se vuelven cristales',
+  },
 };
+
+/** What each bonus star turns the deadly items into, and what pours in during its frenzy. */
+const STAR_GEM: Record<StarKind, Kind> = { starCyan: 'cyan' };
+/** After a star: this long with only its gems coming in, faster than normal spawns. */
+const FRENZY = { time: 5, interval: 0.18 };
 
 /** How many slices each shield has; a mine breaks only the slice it hits. */
 const SHIELD_SLICES: Record<ShieldKind, number> = { shield: 1, pizza: 6 };
 
 const isShield = (k: Kind): k is ShieldKind => k === 'shield' || k === 'pizza';
 const isFake = (k: Kind): k is FakeKind => k === 'fakeCyan' || k === 'fakeYellow' || k === 'fakePink';
+const isStar = (k: Kind): k is StarKind => k in STAR_GEM;
 /** Touching the core with one of these ends the run (shields block them all the same). */
 const isDeadly = (k: Kind) => k === 'mine' || isFake(k);
 
@@ -179,16 +201,26 @@ interface Phase {
   title?: string; // banner shown when the phase starts
   intro?: Kind; // new item: spawned first and featured on the banner
   shields?: ShieldKind[]; // shields that may drop at random during the phase
+  stars?: StarKind[]; // bonus stars that may drop at random during the phase
 }
 
 /**
  * Pacing: each phase introduces one thing. Spawns are dealt from a shuffled
- * bag so the mix always holds (no droughts, no mine streaks). Shields are
- * rare drops on their own random timer, outside the bag.
+ * bag so the mix always holds (no droughts, no mine streaks). Shields and
+ * bonus stars are rare drops on their own random timers, outside the bag.
  */
 const PHASES: Phase[] = [
   { at: 0, interval: 0.8, bag: { cyan: 8, mine: 2 } },
   { at: 15, interval: 0.7, bag: { cyan: 5, yellow: 2, mine: 3 }, title: '¡NUEVO CRISTAL!', intro: 'yellow' },
+  // The first bonus: an easy, early reward that teaches the frenzy before the pressure builds.
+  {
+    at: 25,
+    interval: 0.7,
+    bag: { cyan: 5, yellow: 2, mine: 3 },
+    title: '¡NUEVO BONUS!',
+    intro: 'starCyan',
+    stars: ['starCyan'],
+  },
   // The plain shield comes before rhodonite: it weighs between citrine and rhodonite, and the
   // first protection lands just before the riskiest catch shows up.
   {
@@ -198,6 +230,7 @@ const PHASES: Phase[] = [
     title: '¡NUEVO ESCUDO!',
     intro: 'shield',
     shields: ['shield'],
+    stars: ['starCyan'],
   },
   {
     at: 55,
@@ -206,6 +239,7 @@ const PHASES: Phase[] = [
     title: '¡NUEVO CRISTAL!',
     intro: 'pink',
     shields: ['shield'],
+    stars: ['starCyan'],
   },
   {
     at: 80,
@@ -214,6 +248,7 @@ const PHASES: Phase[] = [
     title: '¡NUEVO ESCUDO!',
     intro: 'pizza',
     shields: ['shield', 'pizza'],
+    stars: ['starCyan'],
   },
   {
     at: 105,
@@ -221,6 +256,7 @@ const PHASES: Phase[] = [
     bag: { cyan: 2, yellow: 2, pink: 1, mine: 5 },
     title: '¡CAOS!',
     shields: ['shield', 'pizza'],
+    stars: ['starCyan'],
   },
   // Fake gems, one size per phase, heaviest first. Only the first one gets a banner (it has to
   // explain the idea); after that the phase number just ticks up and the new fake leads in.
@@ -232,6 +268,7 @@ const PHASES: Phase[] = [
     title: '¡CRISTALES FALSOS!',
     intro: 'fakePink',
     shields: ['shield', 'pizza'],
+    stars: ['starCyan'],
   },
   {
     at: 160,
@@ -239,6 +276,7 @@ const PHASES: Phase[] = [
     bag: { cyan: 2, yellow: 2, pink: 1, mine: 3, fakePink: 1, fakeYellow: 1 },
     intro: 'fakeYellow',
     shields: ['shield', 'pizza'],
+    stars: ['starCyan'],
   },
   {
     at: 185,
@@ -246,10 +284,14 @@ const PHASES: Phase[] = [
     bag: { cyan: 2, yellow: 2, pink: 1, mine: 2, fakePink: 1, fakeYellow: 1, fakeCyan: 1 },
     intro: 'fakeCyan',
     shields: ['shield', 'pizza'],
+    stars: ['starCyan'],
   },
 ];
 const SHIELD_DROP_MIN = 10; // seconds between random shield drops
 const SHIELD_DROP_MAX = 18;
+const STAR_DROP_MIN = 20; // seconds between random bonus star drops
+const STAR_DROP_MAX = 30;
+const DROP_GAP = 3; // a star and a shield never drop closer together than this (s)
 const MAX_MINE_STREAK = 2;
 
 /** Cash-out multiplier by stored load. Must be steep or cashing early always wins. */
@@ -706,6 +748,9 @@ export class Growcore implements MiniGame {
   private introNext: Kind | null = null; // a phase's new item, dealt before anything else
   private bannerAt = -99; // clock time the current phase banner appeared
   private shieldTimer = 0; // countdown to the next random shield drop
+  private starTimer = 0; // countdown to the next random bonus star drop
+  private frenzyAt = -99; // when the last bonus star was caught (clock)
+  private frenzyGem: Kind = 'cyan'; // what pours in during that frenzy
   private shieldKind: ShieldKind | null = null;
   private slices: boolean[] = []; // which shield slices are still up
   private wave: Wave = { id: 0, at: -99, r0: 0, reach: 0, impulse: 0, color: '' };
@@ -923,10 +968,12 @@ export class Growcore implements MiniGame {
     const next = PHASES[this.phase + 1];
     if (next && this.time >= next.at) this.enterPhase(this.phase + 1);
 
+    // During a bonus frenzy only its gems pour in, faster; the bag waits where it was.
+    const frenzy = this.frenzyLeft > 0;
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      this.spawn(this.nextKind());
-      this.spawnTimer = PHASES[this.phase].interval;
+      this.spawn(frenzy ? this.frenzyGem : this.nextKind());
+      this.spawnTimer = frenzy ? FRENZY.interval : PHASES[this.phase].interval;
     }
 
     const drops = PHASES[this.phase].shields;
@@ -935,6 +982,16 @@ export class Growcore implements MiniGame {
       if (this.shieldTimer <= 0) {
         this.spawn(drops[Math.floor(Math.random() * drops.length)]);
         this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
+        this.starTimer = Math.max(this.starTimer, DROP_GAP);
+      }
+    }
+    const stars = PHASES[this.phase].stars;
+    if (stars && !frenzy) {
+      this.starTimer -= dt;
+      if (this.starTimer <= 0) {
+        this.spawn(stars[Math.floor(Math.random() * stars.length)]);
+        this.starTimer = rand(STAR_DROP_MIN, STAR_DROP_MAX);
+        this.shieldTimer = Math.max(this.shieldTimer, DROP_GAP);
       }
     }
 
@@ -1052,6 +1109,8 @@ export class Growcore implements MiniGame {
     this.introNext = null;
     this.bannerAt = -99;
     this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
+    this.starTimer = rand(STAR_DROP_MIN, STAR_DROP_MAX);
+    this.frenzyAt = -99;
     this.shieldKind = null;
     this.slices = [];
     this.bestBefore = loadJSON<Run[]>(RUNS_KEY, [])[0]?.p ?? 0;
@@ -1069,6 +1128,7 @@ export class Growcore implements MiniGame {
     this.spawnTimer = Math.min(this.spawnTimer, 0.4);
     // A shield intro is this phase's first drop; random drops follow after.
     if (p.intro && isShield(p.intro)) this.shieldTimer = rand(SHIELD_DROP_MIN, SHIELD_DROP_MAX);
+    if (p.intro && isStar(p.intro)) this.starTimer = rand(STAR_DROP_MIN, STAR_DROP_MAX);
     this.bannerAt = this.clock;
     // Fanfare only with a banner: quiet phases just tick the counter up.
     if (p.title) {
@@ -1165,6 +1225,7 @@ export class Growcore implements MiniGame {
       vibrate(20);
       return;
     }
+    if (isStar(b.kind)) return this.catchStar(b.kind);
     const tierBefore = this.tierIndex;
     this.bank += k.value;
     this.gems++;
@@ -1184,6 +1245,34 @@ export class Growcore implements MiniGame {
       this.popup(CX, CY - this.targetCoreR() - 16, `x${tier.mult}`, tier.ink, 22);
       sfx.tierUpSfx(step);
     }
+  }
+
+  /**
+   * A bonus star: every bomb and fake on screen turns into the star's gem where it is, and for
+   * FRENZY.time only those gems pour in. Nothing deadly is left, so the player can pull freely.
+   */
+  private catchStar(kind: StarKind) {
+    const gem = STAR_GEM[kind];
+    const k = KINDS[gem];
+    for (const b of this.bodies) {
+      if (b.dead || !isDeadly(b.kind)) continue;
+      b.kind = gem;
+      b.danger = false;
+      this.burst(b.x, b.y, k.light, 6, 90);
+    }
+    this.frenzyAt = this.clock;
+    this.frenzyGem = gem;
+    this.spawnTimer = Math.min(this.spawnTimer, FRENZY.interval);
+    this.corePop = 1;
+    this.burst(CX, CY, k.light, 30, 220);
+    this.popup(CX, CY - this.coreR - 18, '¡ESTRELLA!', k.light, 18);
+    sfx.starSfx();
+    vibrate([20, 30, 20]);
+  }
+
+  /** Seconds left of the bonus frenzy (0 when there is none). */
+  private get frenzyLeft() {
+    return Math.max(0, this.frenzyAt + FRENZY.time - this.clock);
   }
 
   private cashOut() {
@@ -1417,6 +1506,15 @@ export class Growcore implements MiniGame {
     }
     ctx.drawImage(this.sky!, v.x0 - SKY_MARGIN, v.y0 - SKY_MARGIN, v.w + SKY_MARGIN * 2, v.h + SKY_MARGIN * 2);
 
+    // A bonus frenzy tints the whole sky its gem's color, easing in and fading over its last second.
+    const frenzy = this.state === 'playing' ? Math.min(1, (this.clock - this.frenzyAt) / 0.3, this.frenzyLeft) : 0;
+    if (frenzy > 0) {
+      ctx.globalAlpha = frenzy * 0.12;
+      ctx.fillStyle = KINDS[this.frenzyGem].color;
+      ctx.fillRect(v.x0, v.y0, v.w, v.h);
+      ctx.globalAlpha = 1;
+    }
+
     // Holding the magnet lifts the light around the core a little.
     if (active) {
       const r = this.fieldRadius;
@@ -1550,30 +1648,13 @@ export class Growcore implements MiniGame {
   }
 
   /** Round pickups: white bubble, or a pizza bubble tinted with a cycling pastel color. */
-  private drawShieldIcon(kind: ShieldKind, x: number, y: number, spin: number) {
+  private drawShieldIcon(kind: ShieldKind, x: number, y: number) {
     const { ctx } = this;
     const r = KINDS[kind].r;
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.rotate(spin);
     // Same translucent bubble for both; the pizza one tints fill and rim with its cycling color.
-    const rim = kind === 'shield' ? '#ffffff' : this.pizzaColor();
-    ctx.fillStyle = kind === 'shield' ? 'rgba(255,255,255,0.3)' : this.pizzaColor(0.35);
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
-    // Thin rim; a wide faint ring behind it stands in for a glow (no blur).
-    ctx.strokeStyle = rim;
-    ctx.globalAlpha = 0.18;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 1.3;
-    ctx.stroke();
-    ctx.restore();
-    // A plain white gem inside, upright like the real gems (unaffected by the bubble's spin).
+    if (kind === 'shield') this.drawBubble(x, y, r, 'rgba(255,255,255,0.3)', '#ffffff');
+    else this.drawBubble(x, y, r, this.pizzaColor(0.35), this.pizzaColor());
+    // A plain white gem inside, upright like the real gems.
     const d = r * 0.45;
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
@@ -1585,9 +1666,46 @@ export class Growcore implements MiniGame {
     ctx.fill();
   }
 
-  /** `spin` turns mines and shields; gems ignore it and only lean by `tilt` (radians). */
+  /** The pickups' bubble: translucent fill and a thin rim, with a wide faint ring behind it for glow (no blur). */
+  private drawBubble(x: number, y: number, r: number, fill: string, rim: string) {
+    const { ctx } = this;
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    const alpha = ctx.globalAlpha;
+    ctx.strokeStyle = rim;
+    ctx.globalAlpha = alpha * 0.18;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 1.3;
+    ctx.stroke();
+  }
+
+  /** Bonus star pickup: a bubble in the gem's color with a slowly turning five-point star inside. */
+  private drawStarIcon(kind: StarKind, x: number, y: number, spin: number) {
+    const { ctx } = this;
+    const k = KINDS[kind];
+    this.drawBubble(x, y, k.r, `${k.color}55`, k.light);
+    const outer = k.r * 0.62;
+    const inner = outer * 0.45;
+    ctx.fillStyle = k.light;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = spin * 0.4 - Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? inner : outer;
+      if (i) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      else ctx.moveTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /** `spin` turns mines and stars; gems ignore it and only lean by `tilt` (radians). */
   private drawItem(kind: Kind, x: number, y: number, spin: number, tilt = 0) {
-    if (isShield(kind)) return this.drawShieldIcon(kind, x, y, spin);
+    if (isShield(kind)) return this.drawShieldIcon(kind, x, y);
+    if (isStar(kind)) return this.drawStarIcon(kind, x, y, spin);
     if (kind === 'mine') return this.drawMine(x, y, spin);
     // Gems: baked once per kind (glow included), then just copied, leaning by `tilt`.
     const { ctx } = this;
@@ -2106,11 +2224,13 @@ export class Growcore implements MiniGame {
     if (this.state === 'splash') this.drawSplash();
     if (this.state === 'ready') this.drawTitle();
     if (this.state === 'playing') {
-      ctx.textAlign = 'right';
-      ctx.font = font(700, 15);
-      ctx.fillStyle = C.gold;
-      ctx.fillText(`● ${this.runCoins}`, WIDTH - 14, top + 26);
-      ctx.textAlign = 'center';
+      if (SHOW_COINS) {
+        ctx.textAlign = 'right';
+        ctx.font = font(700, 15);
+        ctx.fillStyle = C.gold;
+        ctx.fillText(`● ${this.runCoins}`, WIDTH - 14, top + 26);
+        ctx.textAlign = 'center';
+      }
       ctx.fillStyle = C.ink;
       ctx.font = font(700, 44);
       ctx.fillText(String(Math.round(this.shownScore)), CX, top + 62);
@@ -2180,9 +2300,11 @@ export class Growcore implements MiniGame {
     const shownScore = Math.round(this.score * easeOutCubic(beat(RES.countStart, RES.countEnd - RES.countStart)));
     ctx.globalAlpha = beat(RES.lost, 0.15);
     this.drawPopped(String(shownScore), font(700, 72), C.ink, 180, 26, pop(t - RES.countEnd));
-    const shownCoins = Math.round(this.runCoins * easeOutCubic(beat(RES.coinsStart, RES.coinsEnd - RES.coinsStart)));
-    ctx.globalAlpha = beat(RES.coinsStart, 0.12);
-    this.drawPopped(`+${shownCoins} ●`, font(700, 18), C.gold, 214, 6, pop(t - RES.coinsEnd));
+    if (SHOW_COINS) {
+      const shownCoins = Math.round(this.runCoins * easeOutCubic(beat(RES.coinsStart, RES.coinsEnd - RES.coinsStart)));
+      ctx.globalAlpha = beat(RES.coinsStart, 0.12);
+      this.drawPopped(`+${shownCoins} ●`, font(700, 18), C.gold, 214, 6, pop(t - RES.coinsEnd));
+    }
     ctx.globalAlpha = 1;
 
     const res = this.result;
@@ -2228,7 +2350,7 @@ export class Growcore implements MiniGame {
           this.spaced(2);
           ctx.fillText('ESTA PARTIDA', x + w - 16, cy - 1);
           this.spaced(0);
-        } else {
+        } else if (SHOW_COINS) {
           ctx.fillStyle = C.gold;
           ctx.font = font(600, 13);
           ctx.fillText(`${row.run.m} ●`, x + w - 16, cy);
@@ -2324,7 +2446,7 @@ export class Growcore implements MiniGame {
       fx.score = true;
       sfx.scoreLandSfx();
     }
-    if (!fx.coins && t >= RES.coinsEnd && this.runCoins > 0) {
+    if (SHOW_COINS && !fx.coins && t >= RES.coinsEnd && this.runCoins > 0) {
       fx.coins = true;
       this.uiBurst(CX + 30, 207, [C.gold, '#fff2c4'], 10, 140);
       sfx.coinsSfx();

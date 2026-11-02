@@ -37,22 +37,23 @@ por una, con una barra de peso que deja la rosa visualmente pegada a la mina.
 
 ## Fases
 
-Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVO CRISTAL!" o "¡NUEVO
-ESCUDO!" con ícono, "¡CAOS!"). Cuando entra algo nuevo, es lo primero que aparece
+Cada fase introduce **una sola cosa**, con un cartel ("¡NUEVO CRISTAL!", "¡NUEVO
+ESCUDO!" o "¡NUEVO BONUS!" con ícono, "¡CAOS!"). Cuando entra algo nuevo, es lo primero que aparece
 en esa fase, así el jugador lo ve mientras está el cartel. Arriba, debajo del
 puntaje, se ve "FASE N".
 
-| Fase | Desde | Mezcla cada 10 apariciones | Una aparición cada | Escudos al azar |
-| --- | --- | --- | --- | --- |
-| 1 | 0 s | 8 celestes, 2 minas | 0,8 s | — |
-| 2 — ¡NUEVO CRISTAL! Citrino | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — |
-| 3 — ¡NUEVO ESCUDO! Escudo | 35 s | 4 celestes, 2 amarillas, 4 minas | 0,6 s | simple |
-| 4 — ¡NUEVO CRISTAL! Rodonita | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple |
-| 5 — ¡NUEVO ESCUDO! Super Escudo | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza |
-| 6 — ¡CAOS! | 105 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s | simple o pizza |
-| 7 — ¡CRISTALES FALSOS! | 135 s | 2 celestes, 2 amarillas, 1 rosa, 4 minas, 1 falsa grande | 0,36 s | simple o pizza |
-| 8 (sin cartel) | 160 s | 2 celestes, 2 amarillas, 1 rosa, 3 minas, 1 falsa grande, 1 falsa mediana | 0,36 s | simple o pizza |
-| 9 (sin cartel) | 185 s | 2 celestes, 2 amarillas, 1 rosa, 2 minas, 1 falsa de cada tamaño | 0,36 s | simple o pizza |
+| Fase | Desde | Mezcla cada 10 apariciones | Una aparición cada | Escudos al azar | Estrellas al azar |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 0 s | 8 celestes, 2 minas | 0,8 s | — | — |
+| 2 — ¡NUEVO CRISTAL! Citrino | 15 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — | — |
+| 3 — ¡NUEVO BONUS! Estrella Celeste | 25 s | 5 celestes, 2 amarillas, 3 minas | 0,7 s | — | celeste |
+| 4 — ¡NUEVO ESCUDO! Escudo | 35 s | 4 celestes, 2 amarillas, 4 minas | 0,6 s | simple | celeste |
+| 5 — ¡NUEVO CRISTAL! Rodonita | 55 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,5 s | simple | celeste |
+| 6 — ¡NUEVO ESCUDO! Super Escudo | 80 s | 3 celestes, 2 amarillas, 1 rosa, 4 minas | 0,45 s | simple o pizza | celeste |
+| 7 — ¡CAOS! | 105 s | 2 celestes, 2 amarillas, 1 rosa, 5 minas | 0,36 s | simple o pizza | celeste |
+| 8 — ¡CRISTALES FALSOS! | 135 s | 2 celestes, 2 amarillas, 1 rosa, 4 minas, 1 falsa grande | 0,36 s | simple o pizza | celeste |
+| 9 (sin cartel) | 160 s | 2 celestes, 2 amarillas, 1 rosa, 3 minas, 1 falsa grande, 1 falsa mediana | 0,36 s | simple o pizza | celeste |
+| 10 (sin cartel) | 185 s | 2 celestes, 2 amarillas, 1 rosa, 2 minas, 1 falsa de cada tamaño | 0,36 s | simple o pizza | celeste |
 
 **Bolsa en vez de dado:** las apariciones se reparten de una bolsa mezclada con la
 mezcla de la fase, así las proporciones se cumplen siempre (sin rachas raras ni
@@ -61,15 +62,15 @@ cristales sigue subiendo de a poco con el tiempo.
 
 ## Cristales falsos
 
-Desde la fase 7 aparecen **cristales falsos**: bombas disfrazadas. Son rojos, con la
+Desde la fase 8 aparecen **cristales falsos**: bombas disfrazadas. Son rojos, con la
 silueta dentada de la "gema maldita" (8 puntas) y del mismo tamaño que el cristal
 bueno que imitan: grande (Rodonita), mediano (Citrino) y pequeño (Celestina). Pesan
 **lo mismo** que su cristal real, así que el peso no las delata: hay que mirarlas.
 Atraer una es igual que atraer una mina (los escudos también las paran).
 
-Entran de a una por fase, primero la más pesada: la grande en la 7 (con el cartel
-"¡CRISTALES FALSOS!", que explica la idea), el mediano en la 8 y el pequeño en la 9.
-Las fases 8 y 9 no tienen cartel ni fanfarria: solo sube el número de fase y la
+Entran de a una por fase, primero la más pesada: la grande en la 8 (con el cartel
+"¡CRISTALES FALSOS!", que explica la idea), el mediano en la 9 y el pequeño en la 10.
+Las fases 9 y 10 no tienen cartel ni fanfarria: solo sube el número de fase y la
 falsa nueva es lo primero que aparece (o lo segundo, si justo venían 2 mortales
 seguidos). Las falsas reemplazan minas, así que la proporción de mortales se
 mantiene en 5 de cada 10.
@@ -88,6 +89,23 @@ aparece una burbuja alrededor del núcleo que crece con él.
 - El primero de cada tipo llega con su cartel (Escudo a los 35 s, Super Escudo a los 80 s). El Escudo va antes que la Rodonita: por peso queda entre Citrino y Rodonita, y la primera protección llega justo antes de la jugada más riesgosa. Después caen al azar cada 10–18 s.
 - Agarrar un escudo teniendo otro lo reemplaza por el nuevo, completo.
 - Cobrar no saca el escudo; morir sí.
+
+## Estrellas de bonus
+
+Una estrella del color de un cristal dentro de una burbuja, como los escudos, y pesa
+lo mismo que el Escudo (2,2): traerla tiene su riesgo. No suma puntos ni carga. Al
+atraparla:
+
+- **Todas las minas y cristales falsos de la pantalla se convierten** en ese cristal ahí
+  donde están, cada uno con un destellito. Los escudos no cambian.
+- Empieza un **frenesí de 5 s** (`FRENZY`): solo entran cristales de ese color, uno cada
+  0,18 s (unos 28), y el cielo se tiñe suave de su color. Sin nada mortal en pantalla, se
+  puede succionar tranquilo un rato largo, con el cielo girando rápido, y terminar con
+  un cobro grande. La bolsa de la fase queda en pausa y sigue al terminar.
+- Por ahora existe la **Estrella Celeste** (Celestina). Llega con el cartel "¡NUEVO
+  BONUS!" a los 25 s y después cae al azar cada 20–30 s, nunca a menos de 3 s de un
+  escudo ni durante un frenesí. Si convence, se suman la amarilla (~67 s) y la rosa
+  (~120 s).
 
 ## Cobro por tramos
 
@@ -165,6 +183,7 @@ el audio se pausa, y al volver la música sigue justo donde estaba.
 | Captura | Campana (Celestina), dos campanas (Citrino), tres campanas y un destello (Rodonita). La nota sube con la carga. |
 | Cobro | Cascada de campanas, más larga cuanto más alto el tramo, sobre un golpe grave suave, y una ráfaga de aire que sale con la onda (más larga y llena cuanto más grande el núcleo). |
 | Escudo / bloqueo | Arpegio de campanas que sube con un soplo de aire / "ting" de vidrio. |
+| Estrella de bonus | Una carrera rápida de campanas que sube dos octavas, un acorde abierto La–Mi que florece debajo y un soplo de aire que sube. |
 
 ## Por qué engancha
 
@@ -195,8 +214,12 @@ dispositivo, ordenada de mejor a peor (hasta 200 partidas). Para borrar la tabla
 todos los dispositivos una vez (por ejemplo, al cambiar cómo se puntúa), se sube
 `BOARD_VERSION` en el código: cada dispositivo la vacía la próxima vez que carga.
 
+**Monedas ocultas por ahora:** se siguen ganando y guardando, pero no se muestran en
+ningún lado (ni en la partida ni en resultados) hasta que haya en qué gastarlas.
+Se vuelven a mostrar con `SHOW_COINS = true`.
+
 **Pantalla final ("escalera"):** muestra cuántos cristales se perdieron ("Perdiste 7
-cristales", si había cristales en el núcleo), el puntaje grande, las monedas ganadas y tres
+cristales", si había cristales en el núcleo), el puntaje grande y tres
 filas: la partida de arriba, **esta partida** resaltada y la de abajo. Debajo, el
 gancho de reintento:
 
@@ -209,7 +232,7 @@ hasta el final. En la primera partida no aparece: no hay nada que superar.
 - La primera vez: "Tu primera partida".
 
 Todo entra animado en ~1,3 s (velo, conteo rápido del puntaje con "pop" y chispas,
-monedas, filas que se deslizan, mensaje o sello de récord con fanfarria); se puede
+filas que se deslizan, mensaje o sello de récord con fanfarria); se puede
 reintentar desde los 0,6 s aunque la animación no haya terminado. Tiempos en `RES`.
 
 En el dispositivo también se guardan el mute y si el jugador ya hizo estallar el
